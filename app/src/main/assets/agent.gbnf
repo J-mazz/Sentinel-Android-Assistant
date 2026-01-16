@@ -1,0 +1,44 @@
+# Agent Action Grammar (GBNF)
+# Enforces strict JSON output schema for the Sentinel Agent
+# This grammar guarantees the model can ONLY output valid action JSON
+
+root ::= action-object
+
+action-object ::= "{" ws action-field "," ws target-field? text-field? direction-field? confidence-field "," ws reasoning-field ws "}"
+
+# Required: action type
+action-field ::= "\"action\"" ws ":" ws action-type
+
+action-type ::= "\"CLICK\"" | "\"SCROLL\"" | "\"TYPE\"" | "\"HOME\"" | "\"BACK\"" | "\"WAIT\"" | "\"NONE\""
+
+# Optional: target element (required for CLICK)
+target-field ::= "\"target\"" ws ":" ws string "," ws
+
+# Optional: text to type (required for TYPE)
+text-field ::= "\"text\"" ws ":" ws string "," ws
+
+# Optional: scroll direction (required for SCROLL)
+direction-field ::= "\"direction\"" ws ":" ws direction-type "," ws
+
+direction-type ::= "\"UP\"" | "\"DOWN\"" | "\"LEFT\"" | "\"RIGHT\""
+
+# Required: confidence score
+confidence-field ::= "\"confidence\"" ws ":" ws number
+
+# Required: reasoning explanation
+reasoning-field ::= "\"reasoning\"" ws ":" ws string
+
+# JSON primitives
+string ::= "\"" characters "\""
+
+characters ::= character*
+
+character ::= [^"\\] | "\\" escape-char
+
+escape-char ::= ["\\nrt/]
+
+number ::= "0" | "1" | ("0" "." digits) | ("1" "." "0")
+
+digits ::= [0-9]+
+
+ws ::= [ \t\n\r]*

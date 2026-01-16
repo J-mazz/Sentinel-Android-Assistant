@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sentinel Agent</string>
+    
+    <!-- Accessibility Service -->
+    <string name="accessibility_service_label">Sentinel Agent</string>
+    <string name="accessibility_service_summary">AI-powered accessibility assistant</string>
+    <string name="accessibility_service_description">Sentinel Agent uses on-device AI to help you interact with your device through voice commands and screen analysis. All processing happens locally on your device - no data is sent to external servers.</string>
+    
+    <!-- Main Activity -->
+    <string name="service_status_label">Service Status</string>
+    <string name="model_status_label">Model Status</string>
+    <string name="status_active">ACTIVE</string>
+    <string name="status_inactive">INACTIVE</string>
+    <string name="status_loaded">LOADED</string>
+    <string name="status_not_loaded">NOT LOADED</string>
+    <string name="status_loading">LOADING…</string>
+    
+    <!-- Buttons -->
+    <string name="btn_enable_service">Enable Service</string>
+    <string name="btn_open_settings">Open Settings</string>
+    <string name="btn_load_model">Load Model</string>
+    <string name="btn_test_inference">Test Inference</string>
+    
+    <!-- Input Fields -->
+    <string name="hint_model_path">Model path (.gguf)</string>
+    <string name="hint_grammar_path">Grammar path (.gbnf)</string>
+    <string name="hint_test_query">Enter test query…</string>
+    
+    <!-- Notifications -->
+    <string name="notification_channel_name">Sentinel Agent</string>
+    <string name="notification_channel_description">Agent service status</string>
+    <string name="notification_title">Sentinel Agent Active</string>
+    <string name="notification_text">Listening for commands…</string>
+    
+    <!-- Dialogs -->
+    <string name="dialog_confirm_title">⚠️ Confirm Action</string>
+    <string name="dialog_confirm_message">The agent wants to perform:\n\n%1$s on \"%2$s\"\n\nPress Volume Up to confirm.</string>
+    <string name="dialog_cancel">Cancel</string>
+    
+    <!-- Errors -->
+    <string name="error_model_not_loaded">Model not loaded</string>
+    <string name="error_service_not_running">Accessibility service not running</string>
+    <string name="error_inference_failed">Inference failed</string>
+    
+    <!-- Toast Messages -->
+    <string name="toast_service_connected">Agent service connected</string>
+    <string name="toast_model_loaded">Model loaded successfully</string>
+    <string name="toast_model_failed">Failed to load model</string>
+    <string name="toast_action_success">%1$s: Success</string>
+    <string name="toast_action_failed">%1$s: Failed</string>
+</resources>
