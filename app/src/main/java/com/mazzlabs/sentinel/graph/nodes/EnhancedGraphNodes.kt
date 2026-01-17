@@ -351,9 +351,10 @@ class PlanExecutorNode : AgentNode {
 
         val currentStep = plan.steps[plan.currentStepIndex]
 
+        val normalizedTool = currentStep.toolCall?.takeIf { it.isNotBlank() }
         return state.copy(
             intent = currentStep.intent,
-            selectedTool = currentStep.toolCall,
+            selectedTool = normalizedTool,
             plan = plan.copy(currentStepIndex = plan.currentStepIndex + 1),
             currentNode = "plan_executor"
         )

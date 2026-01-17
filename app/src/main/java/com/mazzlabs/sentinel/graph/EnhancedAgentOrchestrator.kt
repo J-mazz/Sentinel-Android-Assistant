@@ -130,7 +130,9 @@ class EnhancedAgentOrchestrator(private val context: Context) {
 
             .addEdge("tool_selector", "param_extractor")
             .addEdge("param_extractor", "tool_executor")
-            .addEdge("tool_executor", "response_generator")
+            .addConditionalEdge("tool_executor") { state ->
+                if (state.error != null) "response_generator" else "response_generator"
+            }
             .addEdge("ui_action", "response_generator")
             .addEdge("selection_processor", "response_generator")
             .addEdge("response_generator", AgentGraph.END)
