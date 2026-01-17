@@ -5,7 +5,11 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mazzlabs.sentinel.SentinelApplication
+import com.mazzlabs.sentinel.core.GrammarManager
 import com.mazzlabs.sentinel.graph.*
+import com.mazzlabs.sentinel.model.ActionType
+import com.mazzlabs.sentinel.model.AgentAction
+import com.mazzlabs.sentinel.model.ScrollDirection
 import com.mazzlabs.sentinel.tools.Tool
 import com.mazzlabs.sentinel.tools.ToolRegistry
 import com.mazzlabs.sentinel.tools.ToolResult
@@ -29,9 +33,10 @@ class IntentClassifierNode(
         val prompt = buildClassificationPrompt(state)
         
         return try {
+            val grammar = GrammarManager.getGrammarPath("intent.gbnf")
             val response = SentinelApplication.getInstance()
                 .nativeBridge
-                .infer(prompt, "")
+                .inferWithGrammar(prompt, "", grammar)
             
             Log.d(TAG, "Classification response: $response")
             
@@ -88,7 +93,9 @@ Respond with JSON only:
             
             @Suppress("UNCHECKED_CAST")
             val entities = (parsed["entities"] as? Map<String, Any>)
-                ?.mapValues { it.value.toString() }
+                ?.entries
+                ?.take(20)
+                ?.associate { it.key to it.value.toString() }
                 ?: emptyMap()
             
             intent to entities
@@ -170,9 +177,10 @@ class ParameterExtractorNode(
         val prompt = buildExtractionPrompt(state, tool)
         
         return try {
+            val grammar = GrammarManager.getGrammarPath("tool_params.gbnf")
             val response = SentinelApplication.getInstance()
                 .nativeBridge
-                .infer(prompt, "")
+                .inferWithGrammar(prompt, "", grammar)
             
             val params = parseParameters(response)
             
@@ -191,6 +199,9 @@ class ParameterExtractorNode(
 Extract parameters for the ${tool.name} tool from the user's request.
 
 User query: "${state.userQuery}"
+
+Screen context (may include element_id list):
+${state.screenContext.take(4000)}
 
 Tool schema:
 ${tool.parametersSchema}
@@ -324,16 +335,35 @@ class UIActionNode : AgentNode {
             AgentIntent.GO_HOME -> AgentAction(ActionType.HOME, reasoning = "User requested to go home")
             AgentIntent.SCROLL_SCREEN -> {
                 val direction = state.extractedEntities["direction"] ?: "down"
-                AgentAction(ActionType.SCROLL, direction = direction, reasoning = "User requested scroll")
+                val scrollDirection = when (direction.lowercase()) {
+                    "up" -> ScrollDirection.UP
+                    "left" -> ScrollDirection.LEFT
+                    "right" -> ScrollDirection.RIGHT
+                    else -> ScrollDirection.DOWN
+                }
+                AgentAction(ActionType.SCROLL, direction = scrollDirection, reasoning = "User requested scroll")
             }
             AgentIntent.CLICK_ELEMENT -> {
                 val target = state.extractedEntities["target"] ?: state.extractedEntities["element"]
-                AgentAction(ActionType.CLICK, target = target, reasoning = "User requested click")
+                val elementId = state.extractedEntities["element_id"]?.toIntOrNull()
+                AgentAction(
+                    ActionType.CLICK,
+                    elementId = elementId,
+                    target = target,
+                    reasoning = "User requested click"
+                )
             }
             AgentIntent.TYPE_TEXT -> {
                 val text = state.extractedEntities["text"] ?: ""
                 val target = state.extractedEntities["field"]
-                AgentAction(ActionType.TYPE, target = target, text = text, reasoning = "User requested text input")
+                val elementId = state.extractedEntities["element_id"]?.toIntOrNull()
+                AgentAction(
+                    ActionType.TYPE,
+                    elementId = elementId,
+                    target = target,
+                    text = text,
+                    reasoning = "User requested text input"
+                )
             }
             else -> AgentAction(ActionType.NONE, reasoning = "No action determined")
         }

@@ -26,6 +26,9 @@
 #include <format>
 #include <vector>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <cstring>
 
 // llama.cpp headers
 #include "llama.h"
@@ -54,6 +57,7 @@ namespace {
         const llama_vocab* vocab = nullptr;
         llama_sampler* sampler = nullptr;
         std::string chat_template;  // Jinja template from model or custom
+        std::string grammar_text;
         
         // Inference parameters - lower temp for more consistent JSON
         float temperature = 0.3f;
@@ -80,6 +84,7 @@ namespace {
             }
             vocab = nullptr;
             chat_template.clear();
+            grammar_text.clear();
         }
     };
     
@@ -199,12 +204,40 @@ namespace {
     }
     
     /**
-     * Run inference (no grammar constraint)
+     * Run inference with optional grammar constraint
      * Returns std::expected (C++23) for clean error handling
      */
     using InferenceResult = std::expected<std::string, std::string>;
-    
-    [[nodiscard]] InferenceResult run_inference(const std::string& prompt) {
+
+    [[nodiscard]] llama_sampler* create_sampler(const std::string& grammar_text) {
+        llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+        llama_sampler* sampler = llama_sampler_chain_init(sparams);
+
+        llama_sampler_chain_add(sampler,
+            llama_sampler_init_temp(g_state.temperature));
+        llama_sampler_chain_add(sampler,
+            llama_sampler_init_top_p(g_state.top_p, 1));
+
+        if (!grammar_text.empty()) {
+            auto grammar_sampler = llama_sampler_init_grammar(
+                g_state.vocab,
+                grammar_text.c_str(),
+                "root"
+            );
+            if (grammar_sampler) {
+                llama_sampler_chain_add(sampler, grammar_sampler);
+            } else {
+                LOGW("Failed to create grammar sampler");
+            }
+        }
+
+        llama_sampler_chain_add(sampler,
+            llama_sampler_init_dist(42));
+
+        return sampler;
+    }
+
+    [[nodiscard]] InferenceResult run_inference(const std::string& prompt, const std::string& grammar_text) {
         if (!g_state.is_ready()) {
             return std::unexpected("Model not loaded");
         }
@@ -236,16 +269,18 @@ namespace {
             return std::unexpected("Failed to process prompt");
         }
         
-        // Generate response
-        std::string response;
-        response.reserve(g_state.max_tokens * 4);  // Rough estimate
-        
-        // Reset sampler
-        llama_sampler_reset(g_state.sampler);
+        // Generate response using preallocated C buffer
+        const size_t buf_capacity = static_cast<size_t>(g_state.max_tokens) * 8 + 1;
+        auto response_buf = std::unique_ptr<char[]>(new char[buf_capacity]);
+        size_t response_len = 0;
+
+        llama_sampler* sampler = create_sampler(grammar_text);
+        if (!sampler) {
+            return std::unexpected("Failed to create sampler");
+        }
         
         for (int i = 0; i < g_state.max_tokens; ++i) {
-            // Sample next token with grammar constraint
-            llama_token new_token = llama_sampler_sample(g_state.sampler, g_state.ctx, -1);
+            llama_token new_token = llama_sampler_sample(sampler, g_state.ctx, -1);
             
             // Check for end of generation using new API
             if (llama_vocab_is_eog(g_state.vocab, new_token)) {
@@ -257,11 +292,15 @@ namespace {
             char buf[128];
             int n = llama_token_to_piece(g_state.vocab, new_token, buf, sizeof(buf), 0, true);
             if (n > 0) {
-                response.append(buf, n);
+                const size_t copy_len = std::min(static_cast<size_t>(n), buf_capacity - response_len - 1);
+                if (copy_len > 0) {
+                    std::memcpy(response_buf.get() + response_len, buf, copy_len);
+                    response_len += copy_len;
+                }
             }
             
             // Accept token into sampler
-            llama_sampler_accept(g_state.sampler, new_token);
+            llama_sampler_accept(sampler, new_token);
             
             // Create single-token batch for next iteration
             batch = llama_batch_get_one(&new_token, 1);
@@ -271,9 +310,12 @@ namespace {
                 break;
             }
         }
-        
-        LOGD("Generated %zu characters", response.size());
-        return response;
+
+        response_buf.get()[response_len] = '\0';
+        llama_sampler_free(sampler);
+
+        LOGD("Generated %zu characters", response_len);
+        return std::string(response_buf.get(), response_len);
     }
 }
 
@@ -290,13 +332,14 @@ Java_com_mazzlabs_sentinel_core_NativeBridge_initModel(
     JNIEnv* env,
     jobject /* this */,
     jstring jModelPath,
-    jstring /* jGrammarPath - unused, kept for API compat */
+    jstring jGrammarPath
 ) {
     std::lock_guard lock(g_model_mutex);  // C++17 CTAD
     
     g_state.reset();
     
     auto model_path = jstring_to_string(env, jModelPath);
+    auto grammar_path = jstring_to_string(env, jGrammarPath);
     
     LOGI("Initializing model: %s", model_path.c_str());
     
@@ -322,6 +365,19 @@ Java_com_mazzlabs_sentinel_core_NativeBridge_initModel(
     }
     
     LOGI("Model loaded successfully");
+
+    // Load grammar file if provided
+    if (!grammar_path.empty()) {
+        std::ifstream grammar_file(grammar_path);
+        if (grammar_file.is_open()) {
+            std::stringstream buffer;
+            buffer << grammar_file.rdbuf();
+            g_state.grammar_text = buffer.str();
+            LOGI("Grammar loaded: %zu bytes", g_state.grammar_text.size());
+        } else {
+            LOGW("Grammar file not found: %s", grammar_path.c_str());
+        }
+    }
     
     // Try to get the model's chat template
     const char* tmpl = llama_model_chat_template(g_state.model, nullptr);
@@ -356,6 +412,21 @@ Java_com_mazzlabs_sentinel_core_NativeBridge_initModel(
         llama_sampler_init_temp(g_state.temperature));
     llama_sampler_chain_add(g_state.sampler, 
         llama_sampler_init_top_p(g_state.top_p, 1));
+
+    // Add grammar constraint if available
+    if (!g_state.grammar_text.empty()) {
+        auto grammar_sampler = llama_sampler_init_grammar(
+            g_state.vocab,
+            g_state.grammar_text.c_str(),
+            "root"
+        );
+        if (grammar_sampler) {
+            llama_sampler_chain_add(g_state.sampler, grammar_sampler);
+            LOGI("Grammar sampler added to chain");
+        } else {
+            LOGW("Failed to create grammar sampler");
+        }
+    }
     llama_sampler_chain_add(g_state.sampler, 
         llama_sampler_init_dist(42));  // Random seed
     
@@ -416,7 +487,7 @@ Respond ONLY with valid JSON. No markdown, no explanation outside JSON.)";
     LOGD("Final prompt length: %zu", prompt.size());
     
     // Run inference
-    auto result = run_inference(prompt);
+    auto result = run_inference(prompt, g_state.grammar_text);
     
     if (result) {
         LOGI("Inference result: %s", result.value().c_str());
@@ -424,6 +495,65 @@ Respond ONLY with valid JSON. No markdown, no explanation outside JSON.)";
     } else {
         LOGE("Inference failed: %s", result.error().c_str());
         return string_to_jstring(env, 
+            std::format(R"({{"action":"NONE","reasoning":"{}"}})", result.error()));
+    }
+}
+
+/**
+ * Run inference with a per-call grammar path
+ */
+JNIEXPORT jstring JNICALL
+Java_com_mazzlabs_sentinel_core_NativeBridge_inferWithGrammar(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring jUserQuery,
+    jstring jScreenContext,
+    jstring jGrammarPath
+) {
+    std::lock_guard lock(g_model_mutex);
+
+    if (!g_state.is_ready()) {
+        LOGE("Model not ready for inference");
+        return string_to_jstring(env, R"({"action":"NONE","reasoning":"Model not loaded"})");
+    }
+
+    auto user_query = jstring_to_string(env, jUserQuery);
+    auto screen_context = jstring_to_string(env, jScreenContext);
+    auto grammar_path = jstring_to_string(env, jGrammarPath);
+
+    LOGD("User query: %s", user_query.c_str());
+    LOGD("Screen context length: %zu", screen_context.size());
+
+    if (sentinel::contains_injection(user_query)) {
+        return string_to_jstring(env, R"({"action":"none","reasoning":"blocked"})");
+    }
+
+    auto safe_query = sentinel::sanitize(user_query, 2048);
+    auto safe_context = sentinel::sanitize(screen_context, 32000);
+
+    std::string system_prompt = safe_context;
+
+    auto prompt = apply_chat_template(system_prompt, safe_query);
+
+    std::string grammar_text;
+    if (!grammar_path.empty()) {
+        std::ifstream grammar_file(grammar_path);
+        if (grammar_file.is_open()) {
+            std::stringstream buffer;
+            buffer << grammar_file.rdbuf();
+            grammar_text = buffer.str();
+        } else {
+            LOGW("Grammar file not found: %s", grammar_path.c_str());
+        }
+    }
+
+    auto result = run_inference(prompt, grammar_text);
+
+    if (result) {
+        return string_to_jstring(env, *result);
+    } else {
+        LOGE("Inference failed: %s", result.error().c_str());
+        return string_to_jstring(env,
             std::format(R"({{"action":"NONE","reasoning":"{}"}})", result.error()));
     }
 }

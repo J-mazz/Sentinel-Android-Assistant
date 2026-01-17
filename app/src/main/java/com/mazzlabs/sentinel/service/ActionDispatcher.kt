@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.model.ScrollDirection
+import com.mazzlabs.sentinel.service.ElementRegistry
 
 /**
  * ActionDispatcher - The Actuator
@@ -20,7 +21,7 @@ import com.mazzlabs.sentinel.model.ScrollDirection
  * Security: Only executes actions that have passed firewall validation.
  * All actions are atomic and reversible where possible.
  */
-class ActionDispatcher {
+class ActionDispatcher(private val registry: ElementRegistry) {
 
     companion object {
         private const val TAG = "ActionDispatcher"
@@ -45,6 +46,11 @@ class ActionDispatcher {
         action: AgentAction
     ): Boolean {
         Log.d(TAG, "Dispatching action: ${action.action} target: ${action.target}")
+
+        if (action.elementId != null && registry.getElement(action.elementId) == null) {
+            Log.w(TAG, "Element id not found in registry: ${action.elementId}")
+            return false
+        }
         
         return when (action.action) {
             ActionType.CLICK -> executeClick(service, root, action)
@@ -68,17 +74,12 @@ class ActionDispatcher {
         root: AccessibilityNodeInfo,
         action: AgentAction
     ): Boolean {
-        val target = action.target ?: run {
-            Log.w(TAG, "CLICK action missing target")
-            return false
-        }
-
-        // Find the target node
-        val targetNode = findNodeByTarget(root, target)
-        if (targetNode == null) {
-            Log.w(TAG, "Target not found: $target")
-            return false
-        }
+        val targetNode = action.elementId?.let { registry.getNode(it) }
+            ?: action.target?.let { findNodeByTarget(root, it) }
+            ?: run {
+                Log.w(TAG, "CLICK action missing target/element_id")
+                return false
+            }
 
         return try {
             // Try direct click action first
@@ -104,6 +105,19 @@ class ActionDispatcher {
      */
     private fun executeScroll(service: AccessibilityService, action: AgentAction): Boolean {
         val direction = action.direction ?: ScrollDirection.DOWN
+
+        action.elementId?.let { elementId ->
+            val node = registry.getNode(elementId)
+            if (node != null && node.isScrollable) {
+                val scrollAction = when (direction) {
+                    ScrollDirection.UP, ScrollDirection.LEFT -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                    ScrollDirection.DOWN, ScrollDirection.RIGHT -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                }
+                val result = node.performAction(scrollAction)
+                Log.d(TAG, "Element scroll $elementId result: $result")
+                if (result) return true
+            }
+        }
         
         // Get screen dimensions for scroll gesture
         val displayMetrics = service.resources.displayMetrics
@@ -132,12 +146,10 @@ class ActionDispatcher {
             return false
         }
 
-        // Find focused editable field, or target if specified
-        val targetNode = if (action.target != null) {
-            findNodeByTarget(root, action.target)
-        } else {
-            findFocusedEditableNode(root)
-        }
+        // Find by element_id, target, or focused editable field
+        val targetNode = action.elementId?.let { registry.getNode(it) }
+            ?: action.target?.let { findNodeByTarget(root, it) }
+            ?: findFocusedEditableNode(root)
 
         if (targetNode == null) {
             Log.w(TAG, "No editable field found for TYPE action")

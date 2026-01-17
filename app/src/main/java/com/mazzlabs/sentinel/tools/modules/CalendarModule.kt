@@ -27,6 +27,68 @@ class CalendarModule : ToolModule {
         private val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
         private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     }
+
+    private fun safeParseDatetime(input: String): Long? {
+        val formats = listOf(
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        )
+
+        for (format in formats) {
+            format.isLenient = false
+            try {
+                return format.parse(input)?.time
+            } catch (e: Exception) {
+                // try next
+            }
+        }
+
+        val lower = input.lowercase()
+        val cal = Calendar.getInstance()
+
+        return when {
+            lower == "today" -> {
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                cal.timeInMillis
+            }
+            lower == "tomorrow" -> {
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                cal.timeInMillis
+            }
+            lower.startsWith("in ") -> {
+                parseRelativeTime(lower.removePrefix("in ").trim())
+            }
+            else -> null
+        }
+    }
+
+    private fun parseRelativeTime(relative: String): Long? {
+        val cal = Calendar.getInstance()
+        val parts = relative.split(" ")
+        if (parts.size != 2) return null
+
+        val amount = parts[0].toIntOrNull() ?: return null
+
+        when (parts[1].lowercase().trimEnd('s')) {
+            "minute", "min" -> cal.add(Calendar.MINUTE, amount)
+            "hour", "hr" -> cal.add(Calendar.HOUR_OF_DAY, amount)
+            "day" -> cal.add(Calendar.DAY_OF_YEAR, amount)
+            "week" -> cal.add(Calendar.WEEK_OF_YEAR, amount)
+            else -> return null
+        }
+
+        return cal.timeInMillis
+    }
     
     override val moduleId = "calendar"
     
@@ -108,13 +170,26 @@ class CalendarModule : ToolModule {
         val maxResults = (params["max_results"] as? Number)?.toInt() ?: 10
         
         try {
-            val startDate = dateFormat.parse(startDateStr)!!
-            val endDate = dateFormat.parse(endDateStr)!!.let { 
-                Calendar.getInstance().apply { 
-                    time = it
-                    add(Calendar.DAY_OF_MONTH, 1)  // Include full end day
-                }.time
-            }
+            val startMillis = safeParseDatetime(startDateStr)
+                ?: return ToolResponse.Error(
+                    moduleId,
+                    "read_events",
+                    ErrorCode.INVALID_PARAMS,
+                    "Invalid start_date format: $startDateStr"
+                )
+            val endMillis = safeParseDatetime(endDateStr)
+                ?: return ToolResponse.Error(
+                    moduleId,
+                    "read_events",
+                    ErrorCode.INVALID_PARAMS,
+                    "Invalid end_date format: $endDateStr"
+                )
+
+            val startDate = Date(startMillis)
+            val endDate = Calendar.getInstance().apply {
+                timeInMillis = endMillis
+                add(Calendar.DAY_OF_MONTH, 1)  // Include full end day
+            }.time
             
             val projection = arrayOf(
                 CalendarContract.Events._ID,
@@ -183,11 +258,23 @@ class CalendarModule : ToolModule {
             ?: return ToolResponse.Error(moduleId, "create_event", ErrorCode.INVALID_PARAMS, "start_time required")
         
         try {
-            val startTime = dateTimeFormat.parse(startTimeStr)!!.time
+            val startTime = safeParseDatetime(startTimeStr)
+                ?: return ToolResponse.Error(
+                    moduleId,
+                    "create_event",
+                    ErrorCode.INVALID_PARAMS,
+                    "Invalid start_time format: $startTimeStr"
+                )
             val durationMinutes = (params["duration_minutes"] as? Number)?.toInt() ?: 60
             
-            val endTime = (params["end_time"] as? String)?.let { 
-                dateTimeFormat.parse(it)?.time 
+            val endTime = (params["end_time"] as? String)?.let {
+                safeParseDatetime(it)
+                    ?: return ToolResponse.Error(
+                        moduleId,
+                        "create_event",
+                        ErrorCode.INVALID_PARAMS,
+                        "Invalid end_time format: $it"
+                    )
             } ?: (startTime + durationMinutes * 60 * 1000)
             
             val location = params["location"] as? String

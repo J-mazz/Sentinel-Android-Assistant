@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * ToolRouter - Central hub for tool discovery and execution
@@ -152,7 +154,15 @@ class ToolRouter(private val context: Context) {
             // Execute
             try {
                 Log.d(TAG, "Executing $moduleId.$operationId with params: $params")
-                module.execute(operationId, params, context)
+                val result = withTimeoutOrNull(30.seconds) {
+                    module.execute(operationId, params, context)
+                }
+                result ?: ToolResponse.Error(
+                    moduleId = moduleId,
+                    operationId = operationId,
+                    errorCode = ErrorCode.TIMEOUT,
+                    message = "Tool execution timed out after 30 seconds"
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Error executing $moduleId.$operationId", e)
                 ToolResponse.Error(

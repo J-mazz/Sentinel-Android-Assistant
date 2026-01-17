@@ -44,6 +44,11 @@ class NativeBridge {
     external fun infer(userQuery: String, screenContext: String): String
 
     /**
+     * Run inference with a specific grammar file path for this call.
+     */
+    external fun inferWithGrammar(userQuery: String, screenContext: String, grammarPath: String): String
+
+    /**
      * Release model resources and free memory
      */
     external fun releaseModel()

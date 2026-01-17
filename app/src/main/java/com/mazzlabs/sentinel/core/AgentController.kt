@@ -3,6 +3,7 @@ package com.mazzlabs.sentinel.core
 import android.content.Context
 import android.util.Log
 import com.mazzlabs.sentinel.SentinelApplication
+import com.mazzlabs.sentinel.core.JsonExtractor
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.tools.framework.ToolExecutor
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
@@ -92,11 +93,24 @@ class AgentController(private val context: Context) {
      * Parse LLM output and execute appropriate action
      */
     private suspend fun parseAndExecute(response: String): AgentResult {
-        // Extract JSON from response
-        val json = extractJson(response) ?: return AgentResult.Error("No valid JSON in response")
-        
         return try {
-            val jsonObj = JSONObject(json)
+            val extractionResult = JsonExtractor.extract(response)
+            val jsonObj = when (extractionResult) {
+                is JsonExtractor.ExtractionResult.Success -> extractionResult.json
+                is JsonExtractor.ExtractionResult.ArraySuccess -> {
+                    if (extractionResult.json.length() > 0) {
+                        extractionResult.json.getJSONObject(0)
+                    } else {
+                        return AgentResult.Error("Empty action array")
+                    }
+                }
+                is JsonExtractor.ExtractionResult.Failure -> {
+                    Log.e(TAG, "JSON extraction failed: ${extractionResult.error}")
+                    return AgentResult.Error(
+                        "Invalid response format: ${extractionResult.attempts.joinToString()}"
+                    )
+                }
+            }
             
             when {
                 // Tool call
@@ -117,7 +131,7 @@ class AgentController(private val context: Context) {
                 
                 // UI action
                 jsonObj.has("action") -> {
-                    val action = AgentAction.fromJson(json)
+                    val action = AgentAction.fromJson(jsonObj.toString())
                     if (action != null) {
                         AgentResult.UIAction(action)
                     } else {
@@ -134,61 +148,6 @@ class AgentController(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing response", e)
             AgentResult.Error("Parse error: ${e.message}")
-        }
-    }
-    
-    /**
-     * Extract JSON from LLM response (may contain extra text)
-     */
-    private fun extractJson(text: String): String? {
-        // Try to find JSON object
-        val jsonStart = text.indexOfFirst { it == '{' }
-        val jsonEnd = text.indexOfLast { it == '}' }
-        
-        if (jsonStart >= 0 && jsonEnd > jsonStart) {
-            val candidate = text.substring(jsonStart, jsonEnd + 1)
-            // Validate it's valid JSON
-            return try {
-                JSONObject(candidate)
-                candidate
-            } catch (e: Exception) {
-                // Try to repair common issues
-                repairJson(candidate)
-            }
-        }
-        
-        // Try array
-        val arrayStart = text.indexOfFirst { it == '[' }
-        val arrayEnd = text.indexOfLast { it == ']' }
-        
-        if (arrayStart >= 0 && arrayEnd > arrayStart) {
-            return text.substring(arrayStart, arrayEnd + 1)
-        }
-        
-        return null
-    }
-    
-    /**
-     * Attempt to repair malformed JSON
-     */
-    private fun repairJson(json: String): String? {
-        var repaired = json
-        
-        // Fix missing closing quotes
-        val quotePattern = Regex(""":\s*"([^"]*?)(?=[,}\]])""")
-        repaired = quotePattern.replace(repaired) { match ->
-            ": \"${match.groupValues[1]}\""
-        }
-        
-        // Fix trailing commas
-        repaired = repaired.replace(Regex(",\\s*}"), "}")
-        repaired = repaired.replace(Regex(",\\s*]"), "]")
-        
-        return try {
-            JSONObject(repaired)
-            repaired
-        } catch (e: Exception) {
-            null
         }
     }
     

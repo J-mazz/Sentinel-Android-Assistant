@@ -1,0 +1,42 @@
+# Plan Generation Grammar
+
+root ::= "{" ws needs-plan-field "," ws steps-field ws "}"
+
+needs-plan-field ::= "\"needs_plan\"" ws ":" ws boolean
+
+steps-field ::= "\"steps\"" ws ":" ws steps-array
+
+steps-array ::= "[" ws (step-object ("," ws step-object)*)? ws "]"
+
+step-object ::= "{" ws description-field "," ws intent-field ("," ws tool-field)? ("," ws required-entities-field)? ws "}"
+
+description-field ::= "\"description\"" ws ":" ws string
+
+intent-field ::= "\"intent\"" ws ":" ws intent-value
+
+tool-field ::= "\"tool\"" ws ":" ws (string | "null")
+
+required-entities-field ::= "\"required_entities\"" ws ":" ws string-array
+
+string-array ::= "[" ws (string ("," ws string)*)? ws "]"
+
+intent-value ::= "\"READ_CALENDAR\"" | "\"CREATE_EVENT\"" | "\"UPDATE_EVENT\"" | "\"DELETE_EVENT\"" |
+                "\"CREATE_ALARM\"" | "\"LIST_ALARMS\"" | "\"DELETE_ALARM\"" |
+                "\"CALL_CONTACT\"" | "\"SEND_SMS\"" |
+                "\"CLICK_ELEMENT\"" | "\"SCROLL_SCREEN\"" | "\"TYPE_TEXT\"" | "\"GO_BACK\"" | "\"GO_HOME\"" |
+                "\"SEARCH\"" | "\"ANSWER_QUESTION\"" |
+                "\"SEARCH_SELECTED\"" | "\"TRANSLATE_SELECTED\"" | "\"COPY_SELECTED\"" | "\"SAVE_SELECTED\"" | "\"SHARE_SELECTED\"" | "\"EXTRACT_DATA_FROM_SELECTION\"" |
+                "\"UNKNOWN\""
+
+# JSON primitives
+string ::= "\"" characters "\""
+
+characters ::= character*
+
+character ::= [^"\\] | "\\" escape-char
+
+escape-char ::= ["\\nrt/]
+
+boolean ::= "true" | "false"
+
+ws ::= [ \t\n\r]*

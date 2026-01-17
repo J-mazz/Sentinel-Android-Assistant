@@ -36,6 +36,9 @@ data class AgentAction(
     @SerializedName("action")
     val action: ActionType,
     
+    @SerializedName("element_id")
+    val elementId: Int? = null,
+
     @SerializedName("target")
     val target: String? = null,
     

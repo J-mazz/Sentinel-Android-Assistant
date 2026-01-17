@@ -105,6 +105,7 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.lifecycle.service)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.mlkit.text.recognition)
     
     // Testing
     testImplementation(libs.junit)

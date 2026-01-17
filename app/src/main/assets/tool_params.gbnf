@@ -1,13 +1,12 @@
-# Generic JSON Grammar (GBNF)
-# Ensures valid JSON output across intent, plan, and tool responses
+# Tool Parameters Grammar
 
-root ::= value
-
-value ::= object | array | string | number | "true" | "false" | "null"
+root ::= object
 
 object ::= "{" ws (pair ("," ws pair)*)? ws "}"
 
 pair ::= string ws ":" ws value
+
+value ::= string | number | object | array | "true" | "false" | "null"
 
 array ::= "[" ws (value ("," ws value)*)? ws "]"
 
