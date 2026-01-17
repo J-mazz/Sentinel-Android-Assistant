@@ -28,10 +28,21 @@ echo ""
 echo "Installing APK..."
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
-# Copy grammar file to device
+# Copy all grammar files to device
 echo ""
-echo "Copying grammar file..."
-adb push app/src/main/assets/agent.gbnf /data/local/tmp/agent.gbnf
+echo "Copying grammar files..."
+if [ -d "app/src/main/assets" ]; then
+    for f in app/src/main/assets/*.gbnf; do
+        if [ -f "$f" ]; then
+            filename=$(basename -- "$f")
+            echo "  Pushing $filename..."
+            adb push "$f" "/data/local/tmp/$filename" > /dev/null
+        fi
+    done
+    echo "Grammar files copied successfully"
+else
+    echo "Warning: app/src/main/assets directory not found"
+fi
 
 # Copy model if it exists locally
 MODEL_LOCAL="jamba-reasoning-3b-Q4_K_M.gguf"

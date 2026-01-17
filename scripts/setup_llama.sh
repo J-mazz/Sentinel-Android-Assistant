@@ -6,7 +6,7 @@ set -e
 
 LLAMA_CPP_DIR="app/src/main/cpp/libs/llama.cpp"
 LLAMA_REPO="https://github.com/ggerganov/llama.cpp.git"
-LLAMA_TAG="b4269"  # Specify a stable release tag
+LLAMA_TAG="master"  # Use master branch for stability
 
 echo "=== Sentinel Agent - llama.cpp Setup ==="
 
