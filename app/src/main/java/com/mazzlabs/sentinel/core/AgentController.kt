@@ -141,7 +141,7 @@ class AgentController(private val context: Context) {
                 
                 // Unknown format
                 else -> {
-                    AgentResult.Error("Unknown response format: $json")
+                    AgentResult.Error("Unknown response format: $response")
                 }
             }
             

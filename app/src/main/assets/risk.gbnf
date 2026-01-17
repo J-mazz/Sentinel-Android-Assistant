@@ -1,0 +1,21 @@
+# Action Risk Classification Grammar
+
+root ::= "{" ws dangerous-field "," ws confidence-field ("," ws reason-field)? ws "}"
+
+dangerous-field ::= "\"dangerous\"" ws ":" ws boolean
+confidence-field ::= "\"confidence\"" ws ":" ws number
+reason-field ::= "\"reason\"" ws ":" ws string
+
+boolean ::= "true" | "false"
+
+# JSON primitives
+string ::= "\"" characters "\""
+characters ::= character*
+character ::= [^"\\] | "\\" escape-char
+escape-char ::= ["\\nrt/]
+
+number ::= integer ("." digits)?
+integer ::= "-"? ("0" | [1-9] digits?)
+digits ::= [0-9]+
+
+ws ::= [ \t\n\r]*

@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Display
 import android.view.WindowManager
 
 /**
@@ -31,7 +32,7 @@ class ScreenCaptureManager(private val service: AccessibilityService) {
     fun takeScreenshot(callback: (Bitmap?) -> Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             service.takeScreenshot(
-                AccessibilityService.TAKE_SCREENSHOT_FULL_SCREEN,
+                service.display?.displayId ?: Display.DEFAULT_DISPLAY,
                 { it.run() },
                 object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {

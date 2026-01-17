@@ -21,6 +21,7 @@ import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.overlay.OverlayManager
 import com.mazzlabs.sentinel.overlay.SelectionOverlayManager
 import com.mazzlabs.sentinel.security.ActionFirewall
+import com.mazzlabs.sentinel.security.ActionRiskClassifier
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
 import com.mazzlabs.sentinel.graph.nodes.SelectionProcessorNode
 import com.google.mlkit.vision.common.InputImage
@@ -35,8 +36,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * AgentAccessibilityService - The Observer
  * 
- * Passive collection of UI state. Flattens the AccessibilityNodeInfo tree
- * into a semantic string for the Cortex (native inference layer).
+ * Passive collection of UI state. Builds a semantic prompt from the
+ * ElementRegistry for the Cortex (native inference layer).
  * 
  * Security: No business logic here. Pure observation and dispatch.
  */
@@ -69,8 +70,8 @@ class AgentAccessibilityService : AccessibilityService(),
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
-    private val uiTreeFlattener = UITreeFlattener()
     private val actionFirewall = ActionFirewall()
+    private val riskClassifier = ActionRiskClassifier()
     private val elementRegistry = ElementRegistry()
     private val actionDispatcher = ActionDispatcher(elementRegistry)
     private lateinit var enhancedOrchestrator: EnhancedAgentOrchestrator
@@ -87,6 +88,7 @@ class AgentAccessibilityService : AccessibilityService(),
     private var isSelectionMode = false
     private var currentAgentJob: Job? = null
     private val requestCounter = AtomicLong(0)
+    private val uiContentChangeCounter = AtomicLong(0)
 
     private data class OcrResult(
         val text: String,
@@ -185,11 +187,15 @@ class AgentAccessibilityService : AccessibilityService(),
             return
         }
 
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            uiContentChangeCounter.incrementAndGet()
+        }
+        lastScreenContextTimestampMs = System.currentTimeMillis()
+
         // Cache current screen context for when agent is triggered
         rootInActiveWindow?.let { root ->
             try {
                 elementRegistry.rebuild(root)
-                lastScreenContext = uiTreeFlattener.flatten(root)
                 lastElementList = elementRegistry.toPromptString()
                 lastPackageName = event.packageName?.toString() ?: ""
             } finally {
@@ -213,15 +219,10 @@ class AgentAccessibilityService : AccessibilityService(),
         currentAgentJob?.cancel()
         currentAgentJob = serviceScope.launch {
             try {
-                val screenContext = if (lastElementList.isNotBlank()) {
-                    buildString {
-                        appendLine(lastElementList)
-                        appendLine()
-                        appendLine(lastScreenContext)
-                    }
-                } else {
-                    lastScreenContext
-                }
+                val startContentChangeCounter = uiContentChangeCounter.get()
+                val startContextTimestamp = lastScreenContextTimestampMs
+
+                val screenContext = lastElementList
                 Log.d(TAG, "Processing query: $userQuery")
                 Log.d(TAG, "Screen context length: ${screenContext.length}")
 
@@ -233,12 +234,38 @@ class AgentAccessibilityService : AccessibilityService(),
 
                 Log.d(TAG, "Enhanced agent state: $finalState")
 
-                if (requestId == requestCounter.get()) {
+                if (requestId != requestCounter.get()) {
+                    Log.d(TAG, "Stale agent result ignored for request $requestId")
+                    return@launch
+                }
+
+                val uiChanged = uiContentChangeCounter.get() != startContentChangeCounter ||
+                    lastScreenContextTimestampMs != startContextTimestamp
+
+                val action = finalState.action
+                if (action != null) {
+                    val requiresConfirmation = requiresConfirmationForAction(
+                        action = action,
+                        screenContext = screenContext,
+                        packageName = lastPackageName
+                    )
+
+                    withContext(Dispatchers.Main) {
+                        when {
+                            uiChanged -> requestReconfirmationForStaleUi(action)
+                            requiresConfirmation -> {
+                                pendingAction = action
+                                requestPhysicalConfirmation(action) {
+                                    dispatchAction(action)
+                                }
+                            }
+                            else -> dispatchAction(action)
+                        }
+                    }
+                } else {
                     withContext(Dispatchers.Main) {
                         handleAgentState(finalState)
                     }
-                } else {
-                    Log.d(TAG, "Stale agent result ignored for request $requestId")
                 }
 
             } catch (e: Exception) {
@@ -565,6 +592,20 @@ class AgentAccessibilityService : AccessibilityService(),
         Log.i(TAG, "Waiting for Volume Up confirmation for: ${action.action}")
     }
 
+    private fun requestReconfirmationForStaleUi(action: AgentAction) {
+        Log.w(TAG, "UI changed during inference; requesting confirmation for ${action.action}")
+        pendingAction = action
+        val augmented = action.copy(
+            reasoning = listOfNotNull(
+                "UI changed while processing.",
+                action.reasoning
+            ).joinToString(" ")
+        )
+        requestPhysicalConfirmation(augmented) {
+            dispatchAction(action)
+        }
+    }
+
     /**
      * Dispatch action through the Actuator
      */
@@ -590,6 +631,26 @@ class AgentAccessibilityService : AccessibilityService(),
         
         pendingAction = null
         volumeUpCallback = null
+    }
+
+    private suspend fun requiresConfirmationForAction(
+        action: AgentAction,
+        screenContext: String,
+        packageName: String
+    ): Boolean {
+        if (!actionFirewall.isDangerous(action)) return false
+
+        val assessment = riskClassifier.assess(action, screenContext, packageName)
+        if (assessment == null) return true
+
+        val safeByClassifier = !assessment.dangerous && assessment.confidence >= 0.7f
+        if (safeByClassifier) {
+            Log.i(TAG, "Classifier marked action safe: conf=${assessment.confidence} reason=${assessment.reason}")
+        } else {
+            Log.w(TAG, "Classifier marked action dangerous/uncertain: conf=${assessment.confidence} reason=${assessment.reason}")
+        }
+
+        return !safeByClassifier
     }
 
     /**
@@ -635,9 +696,9 @@ class AgentAccessibilityService : AccessibilityService(),
 
     // Cached state
     @Volatile
-    private var lastScreenContext: String = ""
-    @Volatile
     private var lastElementList: String = ""
     @Volatile
     private var lastPackageName: String = ""
+    @Volatile
+    private var lastScreenContextTimestampMs: Long = 0L
 }

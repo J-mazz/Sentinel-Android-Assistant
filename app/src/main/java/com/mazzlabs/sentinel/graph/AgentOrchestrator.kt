@@ -110,7 +110,13 @@ class AgentOrchestrator(private val context: Context) {
                     AgentIntent.SCROLL_SCREEN,
                     AgentIntent.TYPE_TEXT,
                     AgentIntent.GO_BACK,
-                    AgentIntent.GO_HOME -> "ui_action"
+                    AgentIntent.GO_HOME,
+                    AgentIntent.SEARCH_SELECTED,
+                    AgentIntent.TRANSLATE_SELECTED,
+                    AgentIntent.COPY_SELECTED,
+                    AgentIntent.SAVE_SELECTED,
+                    AgentIntent.SHARE_SELECTED,
+                    AgentIntent.EXTRACT_DATA_FROM_SELECTION -> "ui_action"
                     
                     AgentIntent.SEARCH,
                     AgentIntent.ANSWER_QUESTION,

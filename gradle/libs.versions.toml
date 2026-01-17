@@ -13,6 +13,7 @@ coroutinesTest = "1.8.1"
 robolectric = "4.11.1"
 truth = "1.4.2"
 mlkitTextRecognition = "16.0.0"
+kover = "0.8.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,3 +36,4 @@ mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition"
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

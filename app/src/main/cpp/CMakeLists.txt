@@ -55,6 +55,9 @@ add_subdirectory(${LLAMA_CPP_DIR} llama.cpp.build EXCLUDE_FROM_ALL)
 # ============================================================================
 add_library(sentinel_native SHARED
     native-lib.cpp
+    native_state.cpp
+    native_utils.cpp
+    native_inference.cpp
 )
 
 target_include_directories(sentinel_native PRIVATE

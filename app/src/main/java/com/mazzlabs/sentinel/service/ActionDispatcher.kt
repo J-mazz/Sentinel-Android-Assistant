@@ -85,7 +85,7 @@ class ActionDispatcher(private val registry: ElementRegistry) {
             // Try direct click action first
             if (targetNode.isClickable) {
                 val result = targetNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Log.d(TAG, "Direct click on $target: $result")
+                Log.d(TAG, "Direct click on ${action.target}: $result")
                 result
             } else {
                 // Fall back to gesture-based click

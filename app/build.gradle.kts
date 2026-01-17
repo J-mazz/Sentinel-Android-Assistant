@@ -1,11 +1,10 @@
+import org.gradle.api.GradleException
+import javax.xml.parsers.DocumentBuilderFactory
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-    id("jacoco")
-}
-
-jacoco {
-    toolVersion = "0.8.11"
+    alias(libs.plugins.kover)
 }
 
 android {
@@ -115,67 +114,69 @@ dependencies {
     testImplementation(libs.truth)
 }
 
-tasks.register<JacocoReport>("jacocoTestReport") {
-    dependsOn("testDebugUnitTest")
-    
-    reports {
-        xml.required.set(true)
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco"))
-    }
-    
-    val fileFilter = listOf(
-        "**/R.class",
-        "**/R$*.class",
-        "**/BuildConfig.*",
-        "**/Manifest*.*",
-        "**/*Test*.*",
-        "**/databinding/**",
-        "**/android/**"
-    )
-    
-    val debugTree = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/debug") {
-        exclude(fileFilter)
-    }
-    
-    val mainSrc = "${project.projectDir}/src/main/java"
-    
-    sourceDirectories.setFrom(files(mainSrc))
-    classDirectories.setFrom(files(debugTree))
-    executionData.setFrom(fileTree(layout.buildDirectory) {
-        include("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
-        include("jacoco/testDebugUnitTest.exec")
-    })
-}
+tasks.register("koverCoverageGate") {
+    dependsOn("koverXmlReport")
 
-tasks.register<JacocoCoverageVerification>("jacocoCoverageVerification") {
-    dependsOn("jacocoTestReport")
-    
-    val fileFilter = listOf(
-        "**/R.class",
-        "**/R$*.class",
-        "**/BuildConfig.*",
-        "**/Manifest*.*",
-        "**/*Test*.*",
-        "**/databinding/**",
-        "**/android/**"
-    )
-    
-    val debugTree = fileTree("${layout.buildDirectory.get()}/tmp/kotlin-classes/debug") {
-        exclude(fileFilter)
-    }
-    
-    classDirectories.setFrom(files(debugTree))
-    executionData.setFrom(fileTree(layout.buildDirectory) {
-        include("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
-        include("jacoco/testDebugUnitTest.exec")
-    })
-    
-    violationRules {
-        rule {
-            limit {
-                minimum = "0.75".toBigDecimal()
+    doLast {
+        val reportFile = file("${layout.buildDirectory.get()}/reports/kover/report.xml")
+        if (!reportFile.exists()) {
+            throw GradleException("Kover XML report not found at ${reportFile.path}")
+        }
+
+        val includePrefixes = listOf(
+            "com/mazzlabs/sentinel/core",
+            "com/mazzlabs/sentinel/graph",
+            "com/mazzlabs/sentinel/tools",
+            "com/mazzlabs/sentinel/security",
+            "com/mazzlabs/sentinel/model"
+        )
+
+        val excludePrefixes = listOf(
+            "com/mazzlabs/sentinel/databinding"
+        )
+
+        val doc = DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(reportFile)
+
+        val packages = doc.getElementsByTagName("package")
+        var covered = 0L
+        var missed = 0L
+
+        for (i in 0 until packages.length) {
+            val pkg = packages.item(i) as? org.w3c.dom.Element ?: continue
+            val name = pkg.getAttribute("name")
+
+            val included = includePrefixes.any { name.startsWith(it) }
+            val excluded = excludePrefixes.any { name.startsWith(it) }
+            if (!included || excluded) continue
+
+            val counters = pkg.getElementsByTagName("counter")
+            for (j in 0 until counters.length) {
+                val counter = counters.item(j) as? org.w3c.dom.Element ?: continue
+                if (counter.getAttribute("type") == "LINE") {
+                    missed += counter.getAttribute("missed").toLong()
+                    covered += counter.getAttribute("covered").toLong()
+                }
             }
+        }
+
+        val total = missed + covered
+        if (total == 0L) {
+            throw GradleException("No LINE coverage counters found for selected packages.")
+        }
+
+        val coverage = covered.toDouble() / total.toDouble()
+        val threshold = 0.60
+        if (coverage < threshold) {
+            throw GradleException(
+                "Coverage gate failed: ${"%.2f".format(coverage * 100)}% < ${"%.0f".format(threshold * 100)}%"
+            )
         }
     }
 }
+
+tasks.named("check") {
+    dependsOn("koverCoverageGate")
+}
+
