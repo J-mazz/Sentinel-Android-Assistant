@@ -68,9 +68,9 @@ class ActionDispatcherTest {
 
         val action = AgentAction(
             action = ActionType.TYPE,
-            elementId = "com.example:id/input",
+            elementId = null,
             target = "Input Field",
-            parameter = "test input"
+            text = "test input"
         )
 
         val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
@@ -100,7 +100,7 @@ class ActionDispatcherTest {
         every { mockRoot.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) } returns true
 
         val action = AgentAction(
-            action = ActionType.GO_BACK,
+            action = ActionType.BACK,
             target = "Go back"
         )
 
