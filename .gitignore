@@ -13380,3 +13380,4 @@ gradle/gradle-9.3.0/src/wrapper-shared/org/gradle/wrapper/PropertiesFileHandler.
 gradle/gradle-9.3.0/src/wrapper-shared/org/gradle/wrapper/WrapperConfiguration.java
 gradle/gradle-9.3.0/src/wrapper-shared/org/gradle/wrapper/WrapperExecutor.java
 gradle/libs.versions.toml
+.env
