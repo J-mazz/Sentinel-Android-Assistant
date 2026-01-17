@@ -5,6 +5,7 @@ import com.mazzlabs.sentinel.model.AgentAction
 import org.junit.Before
 import org.junit.Test
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.test.runTest
 
 class ActionRiskClassifierTest {
 
@@ -16,7 +17,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_withDeleteActionOnConfirmationScreen_isHighRisk() {
+    fun assess_withDeleteActionOnConfirmationScreen_isHighRisk() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Delete account",
@@ -36,7 +37,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_withSafeClickOnNormalScreen_isLowRisk() {
+    fun assess_withSafeClickOnNormalScreen_isLowRisk() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Next",
@@ -58,7 +59,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_withPaymentAction_flagsAsHighRisk() {
+    fun assess_withPaymentAction_flagsAsHighRisk() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Confirm Payment"
@@ -78,7 +79,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_withTypeActionOnPasswordField_isHighRisk() {
+    fun assess_withTypeActionOnPasswordField_isHighRisk() = runTest {
         val action = AgentAction(
             action = ActionType.TYPE,
             text = "secretpassword"
@@ -98,7 +99,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_withScrollAction_isNeverRisky() {
+    fun assess_withScrollAction_isNeverRisky() = runTest {
         val action = AgentAction(action = ActionType.SCROLL)
         val screenContext = "Any screen content"
 
@@ -110,7 +111,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_returnsReasonForDangerousAssessment() {
+    fun assess_returnsReasonForDangerousAssessment() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Uninstall"
@@ -126,7 +127,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_multipleHighRiskIndicators_increasesConfidence() {
+    fun assess_multipleHighRiskIndicators_increasesConfidence() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Delete everything"
@@ -149,7 +150,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_nullScreenContext_handleGracefully() {
+    fun assess_nullScreenContext_handleGracefully() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Button"
@@ -161,7 +162,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_modelNotReady_returnNull_triggersFailSecure() {
+    fun assess_modelNotReady_returnNull_triggersFailSecure() = runTest {
         // When model is not loaded, assess() returns null
         // This tests the fail-secure behavior in AgentAccessibilityService
         val action = AgentAction(
@@ -182,7 +183,7 @@ class ActionRiskClassifierTest {
     }
 
     @Test
-    fun assess_lowConfidenceAssessment_handledSafely() {
+    fun assess_lowConfidenceAssessment_handledSafely() = runTest {
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Ambiguous Button"
