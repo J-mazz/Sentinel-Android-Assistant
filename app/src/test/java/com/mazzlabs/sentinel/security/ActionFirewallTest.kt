@@ -35,6 +35,23 @@ class ActionFirewallTest {
     }
 
     @Test
+    fun `type missing text is invalid`() {
+        val action = AgentAction(action = ActionType.TYPE)
+
+        val result = firewall.validateAction(action)
+
+        assertEquals(ActionFirewall.ValidationResult.Invalid("TYPE requires text"), result)
+    }
+
+    @Test
+    fun `scroll actions are always safe`() {
+        val action = AgentAction(action = ActionType.SCROLL, direction = ScrollDirection.UP)
+
+        assertTrue(!firewall.isDangerous(action))
+        assertNull(firewall.getDangerReason(action))
+    }
+
+    @Test
     fun `validateAction enforces required fields`() {
         val missingTarget = AgentAction(action = ActionType.CLICK)
         val result = firewall.validateAction(missingTarget)

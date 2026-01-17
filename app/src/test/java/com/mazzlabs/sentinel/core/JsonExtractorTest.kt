@@ -14,6 +14,13 @@ class JsonExtractorTest {
     }
 
     @Test
+    fun `extract parses direct array`() {
+        val result = JsonExtractor.extract("[{\"action\":\"BACK\"}]")
+        val json = (result as JsonExtractor.ExtractionResult.ArraySuccess).json
+        assertEquals("BACK", json.getJSONObject(0).getString("action"))
+    }
+
+    @Test
     fun `extract parses markdown code block`() {
         val text = """
             ```json

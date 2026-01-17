@@ -169,4 +169,40 @@ class ToolModuleTest {
         assertThat(response.message).contains("555-1234")
         assertThat(response.pendingAction).containsEntry("phone", "555-1234")
     }
+
+    @Test
+    fun `toSchemaString includes operations and examples`() {
+        val module = object : ToolModule {
+            override val moduleId: String = "demo"
+            override val description: String = "Demo module"
+            override val requiredPermissions: List<String> = emptyList()
+            override val operations: List<ToolOperation> = listOf(
+                ToolOperation(
+                    operationId = "run",
+                    description = "Run demo",
+                    parameters = listOf(
+                        ToolParameter("arg", ParameterType.STRING, "Argument", required = true)
+                    ),
+                    examples = listOf(
+                        ToolExample("Run demo", "run", mapOf("arg" to "x"))
+                    )
+                )
+            )
+
+            override suspend fun execute(
+                operationId: String,
+                params: Map<String, Any?>,
+                context: android.content.Context
+            ): ToolResponse {
+                return ToolResponse.Success(moduleId, operationId, "ok")
+            }
+        }
+
+        val schema = module.toSchemaString()
+
+        assertThat(schema).contains("## demo")
+        assertThat(schema).contains("Run demo")
+        assertThat(schema).contains("arg")
+        assertThat(schema).contains("Examples")
+    }
 }

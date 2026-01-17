@@ -1,10 +1,30 @@
 import org.gradle.api.GradleException
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import javax.xml.parsers.DocumentBuilderFactory
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kover)
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                packages(
+                    "org.gradle.*",
+                    "com.android.*",
+                    "org.jetbrains.kotlin.*"
+                )
+                classes(
+                    "org.gradle.*",
+                    "com.android.*",
+                    "org.jetbrains.kotlin.*"
+                )
+            }
+        }
+    }
 }
 
 android {
@@ -80,8 +100,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
@@ -132,7 +154,10 @@ tasks.register("koverCoverageGate") {
         )
 
         val excludePrefixes = listOf(
-            "com/mazzlabs/sentinel/databinding"
+            "com/mazzlabs/sentinel/databinding",
+            "org/gradle",
+            "com/android",
+            "org/jetbrains/kotlin"
         )
 
         val doc = DocumentBuilderFactory.newInstance()

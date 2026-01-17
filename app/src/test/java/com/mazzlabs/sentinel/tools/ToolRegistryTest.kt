@@ -34,6 +34,15 @@ class ToolRegistryTest {
     }
 
     @Test
+    fun `generateToolsPrompt empty registry returns empty string`() {
+        val registry = ToolRegistry()
+
+        val prompt = registry.generateToolsPrompt()
+
+        assertThat(prompt).isEmpty()
+    }
+
+    @Test
     fun `hasPermissions returns true when all granted`() {
         val registry = ToolRegistry()
         val tool = TestTool(
@@ -61,6 +70,14 @@ class ToolRegistryTest {
         every { context.checkSelfPermission("perm.sms") } returns PackageManager.PERMISSION_DENIED
 
         assertThat(registry.hasPermissions(context, "sms_send")).isFalse()
+    }
+
+    @Test
+    fun `hasPermissions returns false when tool missing`() {
+        val registry = ToolRegistry()
+        val context = mockk<Context>()
+
+        assertThat(registry.hasPermissions(context, "missing_tool")).isFalse()
     }
 
     private class TestTool(

@@ -191,17 +191,7 @@ class AgentAccessibilityService : AccessibilityService(),
             uiContentChangeCounter.incrementAndGet()
         }
         lastScreenContextTimestampMs = System.currentTimeMillis()
-
-        // Cache current screen context for when agent is triggered
-        rootInActiveWindow?.let { root ->
-            try {
-                elementRegistry.rebuild(root)
-                lastElementList = elementRegistry.toPromptString()
-                lastPackageName = event.packageName?.toString() ?: ""
-            } finally {
-                // Don't recycle - system manages this
-            }
-        }
+        lastPackageName = event.packageName?.toString() ?: ""
     }
 
     /**
@@ -222,7 +212,15 @@ class AgentAccessibilityService : AccessibilityService(),
                 val startContentChangeCounter = uiContentChangeCounter.get()
                 val startContextTimestamp = lastScreenContextTimestampMs
 
-                val screenContext = lastElementList
+                val screenContext = withContext(Dispatchers.Main) {
+                    rootInActiveWindow?.let { root ->
+                        elementRegistry.rebuild(root)
+                        elementRegistry.toPromptString()
+                    } ?: "[No screen content]"
+                }
+
+                lastElementList = screenContext
+
                 Log.d(TAG, "Processing query: $userQuery")
                 Log.d(TAG, "Screen context length: ${screenContext.length}")
 
