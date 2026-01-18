@@ -55,13 +55,23 @@ class AgentController(private val context: Context) {
                 // Build system prompt with tools
                 val systemPrompt = SystemPromptBuilder.build(context, includeTools = true)
                 
-                // Run inference
-                val response = nativeBridge.infer(
+                // Run inference with grammar first
+                var response = nativeBridge.infer(
                     userQuery = buildUserPrompt(query, screenContext),
                     screenContext = systemPrompt
                 )
-                
-                Log.d(TAG, "LLM response: $response")
+
+                // Check if grammar inference failed and retry without grammar
+                if (shouldRetryWithoutGrammar(response)) {
+                    Log.w(TAG, "Grammar inference failed, retrying without grammar constraint")
+                    response = nativeBridge.inferWithoutGrammar(
+                        userQuery = buildUserPrompt(query, screenContext),
+                        screenContext = systemPrompt
+                    )
+                    Log.d(TAG, "Fallback inference result: $response")
+                } else {
+                    Log.d(TAG, "LLM response: $response")
+                }
                 
                 // Parse response
                 parseAndExecute(response)
@@ -163,6 +173,20 @@ class AgentController(private val context: Context) {
         return map
     }
     
+    /**
+     * Check if inference response indicates grammar failure
+     */
+    private fun shouldRetryWithoutGrammar(response: String): Boolean {
+        val errorIndicators = listOf(
+            "Sampler error",
+            "Grammar",
+            "grammar constraint",
+            "empty grammar stack",
+            "inference error"
+        )
+        return errorIndicators.any { response.contains(it, ignoreCase = true) }
+    }
+
     /**
      * Get human-readable result message
      */
