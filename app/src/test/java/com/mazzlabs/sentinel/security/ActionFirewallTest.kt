@@ -182,7 +182,7 @@ class ActionFirewallTest {
         val safeTargets = listOf("Cancel", "Close", "Back", "Dismiss", "Skip", "Home", "Menu")
         for (target in safeTargets) {
             val action = AgentAction(action = ActionType.CLICK, target = target)
-            assertTrue(!firewall.isDangerous(action), "Target '$target' should be safe")
+            assertTrue("Target '$target' should be safe", !firewall.isDangerous(action))
         }
     }
 
@@ -232,4 +232,4 @@ class ActionFirewallTest {
     fun `click on empty target is safe`() {
         val action = AgentAction(action = ActionType.CLICK, target = "")
         assertTrue(!firewall.isDangerous(action))
-    }
+    }}

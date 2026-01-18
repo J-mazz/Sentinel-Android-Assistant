@@ -2,7 +2,6 @@ package com.mazzlabs.sentinel.graph.nodes
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.test.mock.MockContext
 import com.google.common.truth.Truth.assertThat
 import com.mazzlabs.sentinel.graph.AgentIntent
 import com.mazzlabs.sentinel.graph.AgentState
@@ -12,6 +11,8 @@ import com.mazzlabs.sentinel.tools.ErrorCode
 import com.mazzlabs.sentinel.tools.Tool
 import com.mazzlabs.sentinel.tools.ToolRegistry
 import com.mazzlabs.sentinel.tools.ToolResult
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -56,10 +57,10 @@ class GraphNodesCoverageTest {
         val node = UIActionNode()
 
         val goBack = node.process(AgentState(intent = AgentIntent.GO_BACK))
-        assertThat(goBack.action?.type).isEqualTo(ActionType.BACK)
+        assertThat(goBack.action?.action).isEqualTo(ActionType.BACK)
 
         val goHome = node.process(AgentState(intent = AgentIntent.GO_HOME))
-        assertThat(goHome.action?.type).isEqualTo(ActionType.HOME)
+        assertThat(goHome.action?.action).isEqualTo(ActionType.HOME)
     }
 
     @Test
@@ -80,7 +81,7 @@ class GraphNodesCoverageTest {
         )
 
         val click = node.process(clickState)
-        assertThat(click.action?.type).isEqualTo(ActionType.CLICK)
+        assertThat(click.action?.action).isEqualTo(ActionType.CLICK)
         assertThat(click.action?.elementId).isEqualTo(42)
         assertThat(click.action?.target).isEqualTo("button")
     }
@@ -95,7 +96,7 @@ class GraphNodesCoverageTest {
         )
 
         val result = node.process(state)
-        assertThat(result.action?.type).isEqualTo(ActionType.TYPE)
+        assertThat(result.action?.action).isEqualTo(ActionType.TYPE)
         assertThat(result.action?.text).isEqualTo("hello")
         assertThat(result.action?.target).isEqualTo("search")
     }
@@ -129,8 +130,8 @@ class GraphNodesCoverageTest {
     fun `tool executor captures success result`() = runTest {
         val registry = ToolRegistry()
         registry.register(SimpleTool("ping"))
-        val context = object : MockContext() {
-            override fun checkSelfPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED
+        val context = mockk<Context> {
+            every { checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
         }
         val node = ToolExecutorNode(registry, context)
         val state = AgentState(selectedTool = "ping")
@@ -145,8 +146,8 @@ class GraphNodesCoverageTest {
     @Test
     fun `tool executor returns error when tool missing`() = runTest {
         val registry = ToolRegistry()
-        val context = object : MockContext() {
-            override fun checkSelfPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED
+        val context = mockk<Context> {
+            every { checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
         }
         val node = ToolExecutorNode(registry, context)
         val updated = node.process(AgentState(selectedTool = "missing"))

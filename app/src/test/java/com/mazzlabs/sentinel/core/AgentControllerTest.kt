@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 /**
  * Tests for AgentController
@@ -24,7 +25,7 @@ class AgentControllerTest {
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("sentinel_test")
+        tempDir = createTempDirectory("sentinel_test").toFile()
         mockContext = mockk(relaxed = true)
         every { mockContext.filesDir } returns tempDir
         every { mockContext.cacheDir } returns tempDir

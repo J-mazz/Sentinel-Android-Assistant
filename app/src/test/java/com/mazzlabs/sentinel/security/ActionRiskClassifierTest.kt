@@ -175,10 +175,10 @@ class ActionRiskClassifierTest {
         // If model not ready, assessment is null
         // AgentAccessibilityService then returns true (requires confirmation)
         // This is the correct fail-secure behavior
-        if (assessment == null) {
-            // Null means model wasn't ready
-            // Service should default to safe: ask for confirmation
-            assertThat(assessment).isNull()
+        // (assessment could be null if model not ready, which is expected)
+        if (assessment != null) {
+            // If assessment is available, verify it has valid fields
+            assertThat(assessment.confidence).isAtLeast(0f)
         }
     }
 

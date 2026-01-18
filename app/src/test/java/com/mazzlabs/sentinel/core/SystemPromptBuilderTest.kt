@@ -9,6 +9,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.util.*
+import kotlin.io.path.createTempDirectory
 
 /**
  * Tests for SystemPromptBuilder
@@ -18,11 +19,11 @@ import java.util.*
 class SystemPromptBuilderTest {
 
     private lateinit var mockContext: Context
-    private lateinit var tempDir: File
+    private lateinit var tempDir: java.io.File
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("sentinel_test")
+        tempDir = createTempDirectory("sentinel_test").toFile()
         mockContext = mockk(relaxed = true)
         every { mockContext.filesDir } returns tempDir
         every { mockContext.cacheDir } returns tempDir

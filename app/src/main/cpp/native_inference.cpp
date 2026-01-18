@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <memory>
 
 #include "native_logging.hpp"
@@ -70,7 +71,14 @@ namespace sentinel_native {
     }
 
     for (int i = 0; i < g_state.max_tokens; ++i) {
-        llama_token new_token = llama_sampler_sample(sampler, g_state.ctx, -1);
+        llama_token new_token;
+        try {
+            new_token = llama_sampler_sample(sampler, g_state.ctx, -1);
+        } catch (const std::exception& e) {
+            LOGE("Sampler error during sample: %s", e.what());
+            llama_sampler_free(sampler);
+            return std::unexpected(std::string("Sampler error: ") + e.what());
+        }
 
         if (llama_vocab_is_eog(g_state.vocab, new_token)) {
             LOGD("EOS token at position %d", i);
@@ -87,7 +95,13 @@ namespace sentinel_native {
             }
         }
 
-        llama_sampler_accept(sampler, new_token);
+        try {
+            llama_sampler_accept(sampler, new_token);
+        } catch (const std::exception& e) {
+            LOGE("Sampler error during accept: %s", e.what());
+            llama_sampler_free(sampler);
+            return std::unexpected(std::string("Sampler error: ") + e.what());
+        }
 
         batch = llama_batch_get_one(&new_token, 1);
 

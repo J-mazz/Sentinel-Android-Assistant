@@ -8,6 +8,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 class SessionManagerTest {
 
@@ -16,7 +17,7 @@ class SessionManagerTest {
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("sentinel_sessions")
+        tempDir = createTempDirectory("sentinel_sessions").toFile()
         context = mockk(relaxed = true)
         every { context.filesDir } returns tempDir
     }

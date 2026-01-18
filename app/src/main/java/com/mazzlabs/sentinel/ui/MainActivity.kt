@@ -14,12 +14,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.mazzlabs.sentinel.R
+import com.mazzlabs.sentinel.core.GrammarManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.databinding.ActivityMainBinding
 import com.mazzlabs.sentinel.service.AgentAccessibilityService
+import java.io.File
 
 /**
  * MainActivity - Configuration and Status UI
@@ -35,7 +37,6 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         // Model path - copy from Downloads: adb shell cp /sdcard/Download/jamba-reasoning-3b-Q4_K_M.gguf /data/local/tmp/
         private const val DEFAULT_MODEL_PATH = "/data/local/tmp/jamba-reasoning-3b-Q4_K_M.gguf"
-        private const val DEFAULT_GRAMMAR_PATH = "/data/local/tmp/agent.gbnf"
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -109,7 +110,7 @@ class MainActivity : AppCompatActivity() {
 
         // Model path configuration
         binding.etModelPath.setText(DEFAULT_MODEL_PATH)
-        binding.etGrammarPath.setText(DEFAULT_GRAMMAR_PATH)
+        binding.etGrammarPath.setText(GrammarManager.getGrammarPath("agent.gbnf"))
     }
 
     private fun registerReceivers() {
@@ -149,7 +150,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModel() {
         val modelPath = binding.etModelPath.text.toString()
-        val grammarPath = binding.etGrammarPath.text.toString()
+        val grammarPath = resolveGrammarPath(binding.etGrammarPath.text.toString())
         
         if (modelPath.isBlank() || grammarPath.isBlank()) {
             showToast("Please enter model and grammar paths")
@@ -204,6 +205,29 @@ class MainActivity : AppCompatActivity() {
                 binding.btnTestInference.isEnabled = true
             }
         }
+    }
+
+    private fun resolveGrammarPath(inputPath: String): String {
+        val fallback = GrammarManager.getGrammarPath("agent.gbnf")
+
+        if (inputPath.isBlank()) {
+            Log.w(TAG, "Grammar path blank; using packaged grammar: $fallback")
+            return fallback
+        }
+
+        val file = File(inputPath)
+        if (!file.exists() || !file.canRead()) {
+            Log.w(TAG, "Grammar path not readable: $inputPath; using packaged grammar: $fallback")
+            return fallback
+        }
+
+        val grammarText = runCatching { file.readText() }.getOrNull()
+        if (grammarText.isNullOrBlank() || !grammarText.contains("root ::=")) {
+            Log.w(TAG, "Grammar appears invalid; using packaged grammar: $fallback")
+            return fallback
+        }
+
+        return file.absolutePath
     }
 
     /**

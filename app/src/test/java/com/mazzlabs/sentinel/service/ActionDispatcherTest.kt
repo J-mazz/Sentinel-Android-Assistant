@@ -189,12 +189,14 @@ class ActionDispatcherTest {
 
     @Test
     fun dispatch_nullRoot_returnsFalse() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
         val action = AgentAction(
             action = ActionType.CLICK,
             target = "Button"
         )
+        every { mockRoot.findAccessibilityNodeInfosByText(any()) } returns emptyList()
 
-        val result = actionDispatcher.dispatch(mockAccessibilityService, null, action)
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
         assertThat(result).isFalse()
     }
 

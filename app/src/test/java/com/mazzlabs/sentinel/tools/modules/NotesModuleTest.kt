@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 class NotesModuleTest {
 
@@ -20,7 +21,7 @@ class NotesModuleTest {
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("sentinel_test_notes")
+        tempDir = createTempDirectory("sentinel_test_notes").toFile()
         mockContext = mockk(relaxed = true)
         every { mockContext.filesDir } returns tempDir
         notesModule = NotesModule()

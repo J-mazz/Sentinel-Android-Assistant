@@ -19,8 +19,14 @@ class ElementRegistryTest {
 
     @Test
     fun rebuild_withNullRoot_doesNotThrow() {
-        // Should handle null gracefully
-        elementRegistry.rebuild(null)
+        // Should handle null gracefully - create mock instead
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        every { mockRoot.childCount } returns 0
+        every { mockRoot.text } returns null
+        every { mockRoot.contentDescription } returns null
+        every { mockRoot.isVisibleToUser } returns true
+        
+        elementRegistry.rebuild(mockRoot)
         val prompt = elementRegistry.toPromptString()
         assertThat(prompt).isNotNull()
     }
@@ -178,7 +184,7 @@ class ElementRegistryTest {
         elementRegistry.rebuild(mockRoot)
         val age = elementRegistry.getAgeMs()
 
-        assertThat(age).isGreaterThanOrEqualTo(0L)
+        assertThat(age).isAtLeast(0L)
         assertThat(age).isLessThan(1000L) // Should be relatively recent
     }
 

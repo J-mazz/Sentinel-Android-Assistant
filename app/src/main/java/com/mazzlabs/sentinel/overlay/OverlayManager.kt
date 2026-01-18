@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
 import android.util.Log
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -65,8 +66,9 @@ class OverlayManager(private val context: Context) {
 
         try {
             windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            
-            overlayView = LayoutInflater.from(context).inflate(R.layout.overlay_button, null)
+
+            val themedContext = ContextThemeWrapper(context, R.style.Theme_Sentinel)
+            overlayView = LayoutInflater.from(themedContext).inflate(R.layout.overlay_button, null)
             
             setupTouchListener()
             

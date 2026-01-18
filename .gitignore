@@ -23,7 +23,8 @@ org.gradle.*
 # Local configuration
 local.properties
 *.local
-
+# libs
+llama.cpp/
 # Keystore
 *.jks
 *.keystore
@@ -13381,3 +13382,4 @@ gradle/gradle-9.3.0/src/wrapper-shared/org/gradle/wrapper/WrapperConfiguration.j
 gradle/gradle-9.3.0/src/wrapper-shared/org/gradle/wrapper/WrapperExecutor.java
 gradle/libs.versions.toml
 .env
+Sentinel_Agent_log_af5468731c94.txt

@@ -12,6 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 class TerminalModuleTest {
 
@@ -22,8 +23,8 @@ class TerminalModuleTest {
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("sentinel_test_files")
-        cacheDir = createTempDir("sentinel_test_cache")
+        tempDir = createTempDirectory("sentinel_test_files").toFile()
+        cacheDir = createTempDirectory("sentinel_test_cache").toFile()
         mockContext = mockk(relaxed = true)
         every { mockContext.filesDir } returns tempDir
         every { mockContext.cacheDir } returns cacheDir
