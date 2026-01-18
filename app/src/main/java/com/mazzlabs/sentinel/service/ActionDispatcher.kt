@@ -28,6 +28,9 @@ class ActionDispatcher(private val registry: ElementRegistry) {
         private const val GESTURE_DURATION_MS = 100L
         private const val SCROLL_DURATION_MS = 300L
         private const val SCROLL_DISTANCE = 500
+
+        // Maximum recursion depth to prevent stack overflow on deep UI hierarchies
+        private const val MAX_TRAVERSAL_DEPTH = 50
     }
 
     private val tempRect = Rect()
@@ -209,24 +212,34 @@ class ActionDispatcher(private val registry: ElementRegistry) {
         }
         
         // Fallback: traverse and fuzzy match
-        return findNodeRecursive(root, lowerTarget)
+        return findNodeRecursive(root, lowerTarget, depth = 0)
     }
 
-    private fun findNodeRecursive(node: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
+    private fun findNodeRecursive(
+        node: AccessibilityNodeInfo,
+        target: String,
+        depth: Int = 0
+    ): AccessibilityNodeInfo? {
+        // Prevent stack overflow on deep UI hierarchies
+        if (depth >= MAX_TRAVERSAL_DEPTH) {
+            Log.w(TAG, "Reached max traversal depth ($MAX_TRAVERSAL_DEPTH), stopping recursion")
+            return null
+        }
+
         val nodeText = node.text?.toString()?.lowercase() ?: ""
         val nodeDesc = node.contentDescription?.toString()?.lowercase() ?: ""
         val nodeId = node.viewIdResourceName?.substringAfterLast("/")?.lowercase() ?: ""
-        
+
         if (nodeText.contains(target) || nodeDesc.contains(target) || nodeId.contains(target)) {
             return node
         }
-        
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val result = findNodeRecursive(child, target)
+            val result = findNodeRecursive(child, target, depth + 1)
             if (result != null) return result
         }
-        
+
         return null
     }
 
@@ -238,18 +251,27 @@ class ActionDispatcher(private val registry: ElementRegistry) {
         }
         
         // Find any editable node
-        return findEditableNodeRecursive(root)
+        return findEditableNodeRecursive(root, depth = 0)
     }
 
-    private fun findEditableNodeRecursive(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private fun findEditableNodeRecursive(
+        node: AccessibilityNodeInfo,
+        depth: Int = 0
+    ): AccessibilityNodeInfo? {
+        // Prevent stack overflow on deep UI hierarchies
+        if (depth >= MAX_TRAVERSAL_DEPTH) {
+            Log.w(TAG, "Reached max traversal depth ($MAX_TRAVERSAL_DEPTH), stopping recursion")
+            return null
+        }
+
         if (node.isEditable) return node
-        
+
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val result = findEditableNodeRecursive(child)
+            val result = findEditableNodeRecursive(child, depth + 1)
             if (result != null) return result
         }
-        
+
         return null
     }
 
