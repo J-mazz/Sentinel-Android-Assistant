@@ -150,17 +150,18 @@ class TerminalModule : ToolModule {
                 
                 val result = withTimeoutOrNull(timeoutMs) {
                     val output = StringBuilder()
-                    val reader = BufferedReader(InputStreamReader(process.inputStream))
-                    
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        if (output.length < MAX_OUTPUT_CHARS) {
-                            output.appendLine(line)
+
+                    BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            if (output.length < MAX_OUTPUT_CHARS) {
+                                output.appendLine(line)
+                            }
                         }
                     }
-                    
+
                     val exitCode = process.waitFor()
-                    
+
                     Pair(exitCode, output.toString().take(MAX_OUTPUT_CHARS))
                 }
                 
