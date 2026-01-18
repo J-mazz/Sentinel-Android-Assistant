@@ -276,6 +276,68 @@ Java_com_mazzlabs_sentinel_core_NativeBridge_inferWithGrammar(
 }
 
 /**
+ * Run inference WITHOUT grammar constraint (free-form generation)
+ * Use as fallback when grammar-constrained inference fails
+ */
+JNIEXPORT jstring JNICALL
+Java_com_mazzlabs_sentinel_core_NativeBridge_inferWithoutGrammar(
+    JNIEnv* env,
+    jobject /* this */,
+    jstring jUserQuery,
+    jstring jScreenContext
+) {
+    std::unique_lock lock(g_model_mutex);
+
+    if (!g_state.is_ready()) {
+        LOGE("Model not ready for inference");
+        return string_to_jstring(env, R"({"action":"NONE","reasoning":"Model not loaded"})");
+    }
+
+    auto user_query = jstring_to_string(env, jUserQuery);
+    auto screen_context = jstring_to_string(env, jScreenContext);
+
+    LOGD("User query (no grammar): %s", user_query.c_str());
+    LOGD("Screen context length: %zu", screen_context.size());
+
+    if (sentinel::contains_injection(user_query)) {
+        return string_to_jstring(env, R"({"action":"none","reasoning":"blocked"})");
+    }
+
+    auto safe_query = sentinel::sanitize(user_query, 2048);
+    auto safe_context = sentinel::sanitize(screen_context, 32000);
+
+    std::string system_prompt = R"(You are an Android accessibility agent. Analyze the screen and respond with a JSON action.
+
+Available actions:
+- CLICK: {"action":"CLICK","target":"element_id","reasoning":"why"}
+- TYPE: {"action":"TYPE","target":"element_id","text":"what to type","reasoning":"why"}
+- SCROLL: {"action":"SCROLL","direction":"up|down|left|right","reasoning":"why"}
+- BACK: {"action":"BACK","reasoning":"why"}
+- NONE: {"action":"NONE","reasoning":"why nothing needed"}
+
+Current screen context:
+)" + safe_context + R"(
+
+Respond ONLY with valid JSON. No markdown, no explanation outside JSON.)";
+
+    auto prompt = apply_chat_template(system_prompt, safe_query);
+
+    LOGD("Final prompt length: %zu", prompt.size());
+
+    // Run inference WITHOUT grammar (empty string = no grammar constraint)
+    auto result = run_inference(prompt, "");
+
+    if (result) {
+        LOGI("Inference result (no grammar): %s", result.value().c_str());
+        return string_to_jstring(env, *result);
+    } else {
+        LOGE("Inference failed: %s", result.error().c_str());
+        return string_to_jstring(env,
+            std::format(R"({{"action":"NONE","reasoning":"{}"}})", result.error()));
+    }
+}
+
+/**
  * Release model resources
  */
 JNIEXPORT void JNICALL
@@ -284,7 +346,7 @@ Java_com_mazzlabs_sentinel_core_NativeBridge_releaseModel(
     jobject /* this */
 ) {
     std::unique_lock lock(g_model_mutex);
-    
+
     LOGI("Releasing model resources");
     g_state.reset();
     llama_backend_free();

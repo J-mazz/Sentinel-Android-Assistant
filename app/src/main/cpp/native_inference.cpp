@@ -69,32 +69,50 @@ namespace sentinel_native {
         return std::unexpected("Failed to create sampler");
     }
 
-    for (int i = 0; i < g_state.max_tokens; ++i) {
-        llama_token new_token = llama_sampler_sample(sampler, g_state.ctx, -1);
+    // Wrap sampling loop in try-catch to handle grammar parser errors
+    try {
+        for (int i = 0; i < g_state.max_tokens; ++i) {
+            llama_token new_token = llama_sampler_sample(sampler, g_state.ctx, -1);
 
-        if (llama_vocab_is_eog(g_state.vocab, new_token)) {
-            LOGD("EOS token at position %d", i);
-            break;
-        }
+            if (llama_vocab_is_eog(g_state.vocab, new_token)) {
+                LOGD("EOS token at position %d", i);
+                break;
+            }
 
-        char buf[128];
-        int n = llama_token_to_piece(g_state.vocab, new_token, buf, sizeof(buf), 0, true);
-        if (n > 0) {
-            const size_t copy_len = std::min(static_cast<size_t>(n), buf_capacity - response_len - 1);
-            if (copy_len > 0) {
-                std::memcpy(response_buf.get() + response_len, buf, copy_len);
-                response_len += copy_len;
+            char buf[128];
+            int n = llama_token_to_piece(g_state.vocab, new_token, buf, sizeof(buf), 0, true);
+            if (n > 0) {
+                const size_t copy_len = std::min(static_cast<size_t>(n), buf_capacity - response_len - 1);
+                if (copy_len > 0) {
+                    std::memcpy(response_buf.get() + response_len, buf, copy_len);
+                    response_len += copy_len;
+                }
+            }
+
+            // This can throw std::runtime_error if grammar parser encounters invalid state
+            try {
+                llama_sampler_accept(sampler, new_token);
+            } catch (const std::runtime_error& e) {
+                LOGE("Sampler error during accept: %s", e.what());
+                llama_sampler_free(sampler);
+                return std::unexpected(std::string("Sampler error: ") + e.what());
+            }
+
+            batch = llama_batch_get_one(&new_token, 1);
+
+            if (llama_decode(g_state.ctx, batch) != 0) {
+                LOGW("Decode failed at token %d", i);
+                break;
             }
         }
-
-        llama_sampler_accept(sampler, new_token);
-
-        batch = llama_batch_get_one(&new_token, 1);
-
-        if (llama_decode(g_state.ctx, batch) != 0) {
-            LOGW("Decode failed at token %d", i);
-            break;
-        }
+    } catch (const std::exception& e) {
+        LOGE("Unexpected error during inference: %s", e.what());
+        llama_sampler_free(sampler);
+        return std::unexpected(std::string("Inference error: ") + e.what());
+    } catch (...) {
+        LOGE("Unknown error during inference");
+        llama_sampler_free(sampler);
+        return std::unexpected("Unknown inference error");
     }
 
     response_buf.get()[response_len] = '\0';
