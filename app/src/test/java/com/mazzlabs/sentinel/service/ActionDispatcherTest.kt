@@ -1,142 +1,277 @@
 package com.mazzlabs.sentinel.service
 
+import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityNodeInfo
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.model.ActionType
+import com.mazzlabs.sentinel.model.ScrollDirection
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Before
 import org.junit.Test
 import com.google.common.truth.Truth.assertThat
-import android.content.Context
-import io.mockk.spyk
 
 class ActionDispatcherTest {
 
     private lateinit var actionDispatcher: ActionDispatcher
     private lateinit var mockElementRegistry: ElementRegistry
-    private lateinit var mockContext: Context
+    private lateinit var mockAccessibilityService: AccessibilityService
 
     @Before
     fun setUp() {
         mockElementRegistry = mockk(relaxed = true)
-        mockContext = mockk(relaxed = true)
+        mockAccessibilityService = mockk(relaxed = true)
         actionDispatcher = ActionDispatcher(mockElementRegistry)
     }
 
     @Test
     fun dispatch_withClickAction_executesClick() {
         val mockRoot = mockk<AccessibilityNodeInfo>()
-        val mockTarget = mockk<AccessibilityNodeInfo>()
+        val mockTarget = mockk<AccessibilityNodeInfo>(relaxed = true)
         
-        every { mockRoot.findAccessibilityNodeInfosByViewId("com.example:id/button") } returns listOf(mockTarget)
+        every { mockTarget.isClickable } returns true
         every { mockTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK) } returns true
+        every { mockRoot.findAccessibilityNodeInfosByText("Button") } returns listOf(mockTarget)
 
         val action = AgentAction(
             action = ActionType.CLICK,
-            elementId = "com.example:id/button",
             target = "Button",
             reasoning = "Click the button"
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
         assertThat(result).isTrue()
     }
 
     @Test
-    fun dispatch_withMissingElement_returnsFalse() {
+    fun dispatch_withClickActionUsingElementRegistry_executesClick() {
         val mockRoot = mockk<AccessibilityNodeInfo>()
-        every { mockRoot.findAccessibilityNodeInfosByViewId(any()) } returns emptyList()
+        val mockTarget = mockk<AccessibilityNodeInfo>(relaxed = true)
+        
+        every { mockTarget.isClickable } returns true
+        every { mockTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK) } returns true
+        every { mockElementRegistry.getNode(1) } returns mockTarget
 
         val action = AgentAction(
             action = ActionType.CLICK,
-            elementId = "com.example:id/nonexistent",
+            elementId = 1,
+            target = "Registered Button"
+        )
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_withMissingElementRegistration_returnsFalse() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        every { mockElementRegistry.getElement(999) } returns null
+        every { mockRoot.findAccessibilityNodeInfosByText(any()) } returns emptyList()
+
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            elementId = 999,
             target = "Missing Button"
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
         assertThat(result).isFalse()
     }
 
     @Test
     fun dispatch_withTypeAction_performsTextInput() {
-        val mockRoot = mockk<AccessibilityNodeInfo>()
-        val mockTarget = mockk<AccessibilityNodeInfo>()
+        val mockRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        val mockTarget = mockk<AccessibilityNodeInfo>(relaxed = true)
         
-        every { mockRoot.findAccessibilityNodeInfosByViewId("com.example:id/input") } returns listOf(mockTarget)
+        every { mockTarget.isEditable } returns true
+        every { mockTarget.performAction(AccessibilityNodeInfo.ACTION_FOCUS) } returns true
+        every { mockTarget.performAction(any(), any()) } returns true
+        every { mockRoot.findAccessibilityNodeInfosByText("Input") } returns listOf(mockTarget)
 
         val action = AgentAction(
             action = ActionType.TYPE,
-            elementId = null,
             target = "Input Field",
             text = "test input"
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
-        // Should attempt dispatch without throwing
-        assertThat(result).isNotNull()
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
     }
 
     @Test
-    fun dispatch_withScrollAction_executesScroll() {
+    fun dispatch_withTypeActionMissingText_returnsFalse() {
         val mockRoot = mockk<AccessibilityNodeInfo>()
         
-        every { mockRoot.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) } returns true
+        val action = AgentAction(
+            action = ActionType.TYPE,
+            target = "Input Field"
+            // text is null
+        )
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isFalse()
+    }
+
+    @Test
+    fun dispatch_withScrollActionDown_executesScroll() {
+        val mockRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { mockAccessibilityService.resources.displayMetrics.widthPixels } returns 1080
+        every { mockAccessibilityService.resources.displayMetrics.heightPixels } returns 2340
+        every { mockAccessibilityService.dispatchGesture(any(), any(), any()) } returns true
 
         val action = AgentAction(
             action = ActionType.SCROLL,
-            target = "Scroll down"
+            direction = ScrollDirection.DOWN
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
-        // Scroll should work on root
-        assertThat(result).isNotNull()
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
     }
 
     @Test
-    fun dispatch_withGoBackAction_executesBackNavigation() {
-        val mockRoot = mockk<AccessibilityNodeInfo>()
-        every { mockRoot.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) } returns true
+    fun dispatch_withScrollActionUp_executesScroll() {
+        val mockRoot = mockk<AccessibilityNodeInfo>(relaxed = true)
+        every { mockAccessibilityService.resources.displayMetrics.widthPixels } returns 1080
+        every { mockAccessibilityService.resources.displayMetrics.heightPixels } returns 2340
+        every { mockAccessibilityService.dispatchGesture(any(), any(), any()) } returns true
 
         val action = AgentAction(
-            action = ActionType.BACK,
-            target = "Go back"
+            action = ActionType.SCROLL,
+            direction = ScrollDirection.UP
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
-        assertThat(result).isNotNull()
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_withHomeAction_executesGlobalAction() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        every { mockAccessibilityService.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) } returns true
+
+        val action = AgentAction(action = ActionType.HOME)
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_withBackAction_executesGlobalAction() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        every { mockAccessibilityService.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } returns true
+
+        val action = AgentAction(action = ActionType.BACK)
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_withWaitAction_returnsTrue() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+
+        val action = AgentAction(action = ActionType.WAIT)
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_withNoneAction_returnsTrue() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+
+        val action = AgentAction(action = ActionType.NONE)
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
     }
 
     @Test
     fun dispatch_nullRoot_returnsFalse() {
         val action = AgentAction(
             action = ActionType.CLICK,
-            elementId = "any",
             target = "Button"
         )
 
-        val result = actionDispatcher.dispatch(mockContext, null, action)
+        val result = actionDispatcher.dispatch(mockAccessibilityService, null, action)
         assertThat(result).isFalse()
     }
 
     @Test
-    fun dispatch_multipleMatches_usesFirst() {
+    fun dispatch_clickActionNoTargetNoElementId_returnsFalse() {
         val mockRoot = mockk<AccessibilityNodeInfo>()
-        val mockTarget1 = mockk<AccessibilityNodeInfo>()
-        val mockTarget2 = mockk<AccessibilityNodeInfo>()
+        every { mockRoot.findAccessibilityNodeInfosByText(any()) } returns emptyList()
+
+        val action = AgentAction(
+            action = ActionType.CLICK
+            // No target, no elementId
+        )
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isFalse()
+    }
+
+    @Test
+    fun dispatch_multipleClickMatches_usesFirst() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        val mockTarget1 = mockk<AccessibilityNodeInfo>(relaxed = true)
+        val mockTarget2 = mockk<AccessibilityNodeInfo>(relaxed = true)
         
-        every { mockRoot.findAccessibilityNodeInfosByViewId("com.example:id/button") } returns listOf(mockTarget1, mockTarget2)
+        every { mockTarget1.isClickable } returns true
+        every { mockTarget2.isClickable } returns true
         every { mockTarget1.performAction(AccessibilityNodeInfo.ACTION_CLICK) } returns true
+        every { mockRoot.findAccessibilityNodeInfosByText("Next") } returns listOf(mockTarget1, mockTarget2)
 
         val action = AgentAction(
             action = ActionType.CLICK,
-            elementId = "com.example:id/button",
-            target = "Button"
+            target = "Next"
         )
 
-        val result = actionDispatcher.dispatch(mockContext, mockRoot, action)
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
         assertThat(result).isTrue()
         verify { mockTarget1.performAction(AccessibilityNodeInfo.ACTION_CLICK) }
+    }
+
+    @Test
+    fun dispatch_scrollWithElementRegistry_usesRegisteredElement() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        val mockScrollable = mockk<AccessibilityNodeInfo>(relaxed = true)
+        
+        every { mockScrollable.isScrollable } returns true
+        every { mockScrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) } returns true
+        every { mockElementRegistry.getNode(42) } returns mockScrollable
+
+        val action = AgentAction(
+            action = ActionType.SCROLL,
+            elementId = 42,
+            direction = ScrollDirection.DOWN
+        )
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun dispatch_clickOnNonClickableNode_fallsBackToGesture() {
+        val mockRoot = mockk<AccessibilityNodeInfo>()
+        val mockTarget = mockk<AccessibilityNodeInfo>(relaxed = true)
+        
+        every { mockTarget.isClickable } returns false
+        every { mockTarget.getBoundsInScreen(any()) }.answers {
+            val rect = it.invocation.args[0] as android.graphics.Rect
+            rect.set(100, 100, 200, 200)
+        }
+        every { mockAccessibilityService.dispatchGesture(any(), any(), any()) } returns true
+        every { mockRoot.findAccessibilityNodeInfosByText("NonClickable") } returns listOf(mockTarget)
+
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "NonClickable"
+        )
+
+        val result = actionDispatcher.dispatch(mockAccessibilityService, mockRoot, action)
+        assertThat(result).isTrue()
+        verify { mockAccessibilityService.dispatchGesture(any(), any(), any()) }
     }
 }

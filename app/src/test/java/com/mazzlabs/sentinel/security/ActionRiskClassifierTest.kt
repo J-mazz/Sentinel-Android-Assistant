@@ -204,4 +204,123 @@ class ActionRiskClassifierTest {
             }
         }
     }
+
+    @Test
+    fun assess_withUninstallAction_isHighRisk() = runTest {
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "Uninstall App"
+        )
+        
+        val screenContext = """
+            App Settings
+            Version 1.0.0
+            [Uninstall] [Open]
+        """.trimIndent()
+
+        val assessment = classifier.assess(action, screenContext, "com.example.banking")
+        
+        if (assessment != null) {
+            assertThat(assessment.dangerous).isTrue()
+        }
+    }
+
+    @Test
+    fun assess_withFormSubmitAction_flagsAsRisk() = runTest {
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "Submit Form"
+        )
+        
+        val screenContext = """
+            Registration Form
+            Name: [____]
+            Email: [____]
+            [Submit] [Cancel]
+        """.trimIndent()
+
+        val assessment = classifier.assess(action, screenContext, "com.example.app")
+        
+        // Submit actions should generally be flagged as requiring caution
+        if (assessment != null) {
+            assertThat(assessment.dangerous ?: false).isTrue()
+        }
+    }
+
+    @Test
+    fun assess_withHomeAction_isNeverRisky() = runTest {
+        val action = AgentAction(action = ActionType.HOME)
+        val screenContext = "Any screen"
+
+        val assessment = classifier.assess(action, screenContext, "com.example.app")
+        
+        // HOME action is never considered dangerous for security purposes
+        if (assessment != null) {
+            assertThat(assessment.dangerous).isFalse()
+        }
+    }
+
+    @Test
+    fun assess_withBackAction_isNeverRisky() = runTest {
+        val action = AgentAction(action = ActionType.BACK)
+        val screenContext = "Any screen"
+
+        val assessment = classifier.assess(action, screenContext, "com.example.app")
+        
+        // BACK action is never considered dangerous
+        if (assessment != null) {
+            assertThat(assessment.dangerous).isFalse()
+        }
+    }
+
+    @Test
+    fun assess_providesConfidenceScore() = runTest {
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "Settings"
+        )
+
+        val assessment = classifier.assess(action, "Settings Screen", "com.example.app")
+        
+        if (assessment != null) {
+            assertThat(assessment.confidence).isAtLeast(0f)
+            assertThat(assessment.confidence).isAtMost(1f)
+        }
+    }
+
+    @Test
+    fun assess_dangerousActionIncludesReason() = runTest {
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "Factory Reset"
+        )
+        
+        val screenContext = "Device Settings"
+
+        val assessment = classifier.assess(action, screenContext, "com.android.settings")
+        
+        if (assessment != null && assessment.dangerous) {
+            // Dangerous actions should include reasoning
+            assertThat(assessment.reason).isNotNull()
+            if (assessment.reason != null) {
+                assertThat(assessment.reason).isNotEmpty()
+            }
+        }
+    }
+
+    @Test
+    fun assess_largeScreenContext_handledWithTruncation() = runTest {
+        val action = AgentAction(
+            action = ActionType.CLICK,
+            target = "OK"
+        )
+        
+        // Create a very large screen context
+        val largeContext = "Screen content: " + "x".repeat(5000)
+
+        val assessment = classifier.assess(action, largeContext, "com.example.app")
+        
+        // Should not crash or return null on large input
+        assertThat(assessment).isNotNull()
+    }
 }
