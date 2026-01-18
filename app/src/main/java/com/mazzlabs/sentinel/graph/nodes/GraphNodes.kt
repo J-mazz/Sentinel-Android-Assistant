@@ -83,24 +83,26 @@ Respond with JSON only:
             val gson = Gson()
             val type = object : TypeToken<Map<String, Any>>() {}.type
             val parsed: Map<String, Any> = gson.fromJson(response, type)
-            
+
             val intentStr = parsed["intent"]?.toString()?.uppercase() ?: "UNKNOWN"
             val intent = try {
                 AgentIntent.valueOf(intentStr)
             } catch (e: Exception) {
                 AgentIntent.UNKNOWN
             }
-            
+
             @Suppress("UNCHECKED_CAST")
             val entities = (parsed["entities"] as? Map<String, Any>)
                 ?.entries
                 ?.take(20)
                 ?.associate { it.key to it.value.toString() }
                 ?: emptyMap()
-            
+
             intent to entities
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse classification", e)
+            // Include the response in the log to aid debugging (truncated to avoid excessive logging)
+            val truncatedResponse = response.take(500)
+            Log.e(TAG, "Failed to parse classification response: '$truncatedResponse'${if (response.length > 500) "... (truncated)" else ""}", e)
             AgentIntent.UNKNOWN to emptyMap()
         }
     }
@@ -220,7 +222,9 @@ Respond with JSON containing only the parameter values:
             val type = object : TypeToken<Map<String, Any?>>() {}.type
             gson.fromJson(response, type) ?: emptyMap()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse parameters", e)
+            // Include the response in the log to aid debugging (truncated to avoid excessive logging)
+            val truncatedResponse = response.take(500)
+            Log.e(TAG, "Failed to parse parameters response: '$truncatedResponse'${if (response.length > 500) "... (truncated)" else ""}", e)
             emptyMap()
         }
     }

@@ -30,20 +30,32 @@ class ElementRegistry {
         return elements.size
     }
 
-    private fun traverse(node: AccessibilityNodeInfo) {
-        if (!node.isVisibleToUser) return
+    /**
+     * Recursively traverse the accessibility tree and register interactive elements.
+     * @return true if this node was stored in nodeMap, false otherwise
+     */
+    private fun traverse(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isVisibleToUser) return false
 
         val element = extractElement(node)
-        if (element != null) {
-            elements[element.id] = element
+        val nodeWasStored = element != null
+
+        if (nodeWasStored) {
+            elements[element!!.id] = element
             nodeMap[element.id] = node
         }
 
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { child ->
-                traverse(child)
+                val childWasStored = traverse(child)
+                // Recycle child nodes that weren't stored in nodeMap
+                if (!childWasStored) {
+                    child.recycle()
+                }
             }
         }
+
+        return nodeWasStored
     }
 
     private fun extractElement(node: AccessibilityNodeInfo): RegisteredElement? {
@@ -115,6 +127,10 @@ class ElementRegistry {
     fun getAgeMs(): Long = System.currentTimeMillis() - timestamp
 
     fun clear() {
+        // Recycle all AccessibilityNodeInfo objects to prevent memory leaks
+        nodeMap.values.forEach { node ->
+            node.recycle()
+        }
         elements.clear()
         nodeMap.clear()
         nextId.set(1)

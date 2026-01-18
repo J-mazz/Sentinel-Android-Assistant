@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * AgentAccessibilityService - The Observer
@@ -95,7 +96,17 @@ class AgentAccessibilityService : AccessibilityService(),
         val confidence: Float,
         val languageHint: String
     )
-    
+
+    /**
+     * Cached screen state - bundled together to ensure atomic reads/writes
+     * and prevent race conditions when checking if the UI has changed.
+     */
+    private data class CachedScreenState(
+        val elementList: String = "",
+        val packageName: String = "",
+        val timestampMs: Long = 0L
+    )
+
     private var isAgentTriggered = false
     private var pendingAction: AgentAction? = null
     private var volumeUpCallback: (() -> Unit)? = null
@@ -190,8 +201,14 @@ class AgentAccessibilityService : AccessibilityService(),
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             uiContentChangeCounter.incrementAndGet()
         }
-        lastScreenContextTimestampMs = System.currentTimeMillis()
-        lastPackageName = event.packageName?.toString() ?: ""
+
+        // Atomically update cached state to prevent race conditions
+        cachedScreenState.updateAndGet { current ->
+            current.copy(
+                timestampMs = System.currentTimeMillis(),
+                packageName = event.packageName?.toString() ?: ""
+            )
+        }
     }
 
     /**
@@ -210,7 +227,8 @@ class AgentAccessibilityService : AccessibilityService(),
         currentAgentJob = serviceScope.launch {
             try {
                 val startContentChangeCounter = uiContentChangeCounter.get()
-                val startContextTimestamp = lastScreenContextTimestampMs
+                // Atomically capture the screen state at the start
+                val startScreenState = cachedScreenState.get()
 
                 val screenContext = withContext(Dispatchers.Main) {
                     rootInActiveWindow?.let { root ->
@@ -219,7 +237,10 @@ class AgentAccessibilityService : AccessibilityService(),
                     } ?: "[No screen content]"
                 }
 
-                lastElementList = screenContext
+                // Atomically update the element list while preserving other cached state
+                cachedScreenState.updateAndGet { current ->
+                    current.copy(elementList = screenContext)
+                }
 
                 Log.d(TAG, "Processing query: $userQuery")
                 Log.d(TAG, "Screen context length: ${screenContext.length}")
@@ -237,15 +258,17 @@ class AgentAccessibilityService : AccessibilityService(),
                     return@launch
                 }
 
+                // Atomically read current state to check if UI changed
+                val currentScreenState = cachedScreenState.get()
                 val uiChanged = uiContentChangeCounter.get() != startContentChangeCounter ||
-                    lastScreenContextTimestampMs != startContextTimestamp
+                    currentScreenState.timestampMs != startScreenState.timestampMs
 
                 val action = finalState.action
                 if (action != null) {
                     val requiresConfirmation = requiresConfirmationForAction(
                         action = action,
                         screenContext = screenContext,
-                        packageName = lastPackageName
+                        packageName = currentScreenState.packageName
                     )
 
                     withContext(Dispatchers.Main) {
@@ -692,11 +715,7 @@ class AgentAccessibilityService : AccessibilityService(),
         sendBroadcast(intent)
     }
 
-    // Cached state
-    @Volatile
-    private var lastElementList: String = ""
-    @Volatile
-    private var lastPackageName: String = ""
-    @Volatile
-    private var lastScreenContextTimestampMs: Long = 0L
+    // Cached state - using AtomicReference to prevent race conditions
+    // when multiple threads read/write related state variables
+    private val cachedScreenState = AtomicReference(CachedScreenState())
 }
