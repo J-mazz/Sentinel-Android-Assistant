@@ -187,12 +187,21 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
+                val mockScreenContext = buildMockScreenContext()
+                val nativeBridge = SentinelApplication.getInstance().nativeBridge
+
                 val result = withContext(Dispatchers.IO) {
-                    // Use mock screen context for direct testing
-                    val mockScreenContext = buildMockScreenContext()
-                    SentinelApplication.getInstance()
-                        .nativeBridge
-                        .infer(testQuery, mockScreenContext)
+                    // Try inference with grammar first
+                    var response = nativeBridge.infer(testQuery, mockScreenContext)
+
+                    // Check if grammar inference failed and retry without grammar
+                    if (shouldRetryWithoutGrammar(response)) {
+                        Log.w(TAG, "Grammar inference failed, retrying without grammar constraint")
+                        response = nativeBridge.inferWithoutGrammar(testQuery, mockScreenContext)
+                        Log.i(TAG, "Fallback inference result: $response")
+                    }
+
+                    response
                 }
 
                 binding.tvInferenceResult.text = "Result:\n$result"
@@ -228,6 +237,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         return file.absolutePath
+    }
+
+    /**
+     * Check if inference response indicates grammar failure
+     */
+    private fun shouldRetryWithoutGrammar(response: String): Boolean {
+        val errorIndicators = listOf(
+            "Sampler error",
+            "Grammar",
+            "grammar constraint",
+            "empty grammar stack",
+            "inference error"
+        )
+        return errorIndicators.any { response.contains(it, ignoreCase = true) }
     }
 
     /**

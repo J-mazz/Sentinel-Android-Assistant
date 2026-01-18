@@ -49,6 +49,16 @@ class NativeBridge {
     external fun inferWithGrammar(userQuery: String, screenContext: String, grammarPath: String): String
 
     /**
+     * Run inference without grammar constraint (free-form generation)
+     * Use this as a fallback when grammar-constrained inference fails
+     *
+     * @param userQuery The user's query/command
+     * @param screenContext Flattened UI tree context
+     * @return Free-form response string (not grammar-constrained)
+     */
+    external fun inferWithoutGrammar(userQuery: String, screenContext: String): String
+
+    /**
      * Release model resources and free memory
      */
     external fun releaseModel()
