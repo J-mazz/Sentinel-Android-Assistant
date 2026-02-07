@@ -1,17 +1,14 @@
 package com.mazzlabs.sentinel.graph.nodes
 
-import android.content.Context
-import android.content.pm.PackageManager
 import com.google.common.truth.Truth.assertThat
 import com.mazzlabs.sentinel.graph.AgentIntent
 import com.mazzlabs.sentinel.graph.AgentState
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.ScrollDirection
-import com.mazzlabs.sentinel.tools.ErrorCode
-import com.mazzlabs.sentinel.tools.Tool
-import com.mazzlabs.sentinel.tools.ToolRegistry
-import com.mazzlabs.sentinel.tools.ToolResult
-import io.mockk.every
+import com.mazzlabs.sentinel.tools.framework.ErrorCode
+import com.mazzlabs.sentinel.tools.framework.ToolExecutor
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
+import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -21,7 +18,9 @@ class GraphNodesCoverageTest {
     @Test
     fun `response generator formats success result`() = runTest {
         val state = AgentState(
-            toolResults = listOf(ToolResult.Success("agent", "done", data = mapOf("value" to 3)))
+            toolResults = listOf(
+                ToolResponse.Success("agent", "op", "done", data = mapOf("value" to 3))
+            )
         )
 
         val updated = ResponseGeneratorNode().process(state)
@@ -33,9 +32,11 @@ class GraphNodesCoverageTest {
     }
 
     @Test
-    fun `response generator handles failure result`() = runTest {
+    fun `response generator handles error result`() = runTest {
         val state = AgentState(
-            toolResults = listOf(ToolResult.Failure("agent", "oops", ErrorCode.UNKNOWN))
+            toolResults = listOf(
+                ToolResponse.Error("agent", "op", ErrorCode.SYSTEM_ERROR, "oops")
+            )
         )
 
         val updated = ResponseGeneratorNode().process(state)
@@ -102,24 +103,21 @@ class GraphNodesCoverageTest {
     }
 
     @Test
-    fun `tool selector chooses registered tool`() = runTest {
-        val registry = ToolRegistry()
-        registry.register(SimpleTool("calendar_read"))
-        val node = ToolSelectorNode(registry)
+    fun `tool selector chooses correct tool for intent`() = runTest {
+        val node = ToolSelectorNode()
 
         val state = AgentState(intent = AgentIntent.READ_CALENDAR)
         val updated = node.process(state)
 
-        assertThat(updated.selectedTool).isEqualTo("calendar_read")
+        assertThat(updated.selectedTool).isEqualTo("calendar.read_events")
         assertThat(updated.currentNode).isEqualTo("tool_selector")
     }
 
     @Test
-    fun `tool selector falls back when no tool exists`() = runTest {
-        val registry = ToolRegistry()
-        val node = ToolSelectorNode(registry)
+    fun `tool selector falls back when no tool for intent`() = runTest {
+        val node = ToolSelectorNode()
 
-        val state = AgentState(intent = AgentIntent.SEND_SMS)
+        val state = AgentState(intent = AgentIntent.GO_HOME)
         val updated = node.process(state)
 
         assertThat(updated.selectedTool).isNull()
@@ -128,40 +126,26 @@ class GraphNodesCoverageTest {
 
     @Test
     fun `tool executor captures success result`() = runTest {
-        val registry = ToolRegistry()
-        registry.register(SimpleTool("ping"))
-        val context = mockk<Context> {
-            every { checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
-        }
-        val node = ToolExecutorNode(registry, context)
-        val state = AgentState(selectedTool = "ping")
+        val toolExecutor = mockk<ToolExecutor>()
+        coEvery { toolExecutor.execute("calendar.read_events", any()) } returns
+            ToolResponse.Success("calendar", "read_events", "ok")
+
+        val node = ToolExecutorNode(toolExecutor)
+        val state = AgentState(selectedTool = "calendar.read_events")
 
         val updated = node.process(state)
 
         assertThat(updated.currentNode).isEqualTo("tool_executor")
         assertThat(updated.toolResults).hasSize(1)
-        assertThat(updated.toolResults.first()).isInstanceOf(ToolResult.Success::class.java)
+        assertThat(updated.toolResults.first()).isInstanceOf(ToolResponse.Success::class.java)
     }
 
     @Test
     fun `tool executor returns error when tool missing`() = runTest {
-        val registry = ToolRegistry()
-        val context = mockk<Context> {
-            every { checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
-        }
-        val node = ToolExecutorNode(registry, context)
-        val updated = node.process(AgentState(selectedTool = "missing"))
+        val toolExecutor = mockk<ToolExecutor>()
+        val node = ToolExecutorNode(toolExecutor)
+        val updated = node.process(AgentState(selectedTool = null))
 
-        assertThat(updated.error).contains("Tool not found")
-    }
-
-    private class SimpleTool(override val name: String) : Tool {
-        override val description: String = "simple"
-        override val parametersSchema: String = "{}"
-        override val requiredPermissions: List<String> = emptyList()
-
-        override suspend fun execute(params: Map<String, Any?>, context: Context): ToolResult {
-            return ToolResult.Success(name, "ok", data = mapOf("status" to "ok"))
-        }
+        assertThat(updated.error).contains("No tool selected")
     }
 }

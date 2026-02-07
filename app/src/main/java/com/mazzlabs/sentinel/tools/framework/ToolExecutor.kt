@@ -126,6 +126,27 @@ class ToolExecutor(private val context: Context) {
     suspend fun execute(tool: String, params: Map<String, Any?>): ToolResponse {
         return router.execute(tool, params)
     }
+
+    /**
+     * Get the parameter schema for a specific tool call (e.g., "calendar.read_events")
+     */
+    fun getOperationSchema(toolCall: String): String? {
+        val parts = toolCall.split(".", limit = 2)
+        if (parts.size != 2) return null
+        val (moduleId, operationId) = parts
+
+        val module = router.getModules().find { it.moduleId == moduleId } ?: return null
+        val operation = module.operations.find { it.operationId == operationId } ?: return null
+
+        return buildString {
+            appendLine("Operation: $moduleId.$operationId - ${operation.description}")
+            appendLine("Parameters:")
+            for (param in operation.parameters) {
+                val req = if (param.required) "required" else "optional"
+                appendLine("  - ${param.name} (${param.type.name.lowercase()}, $req): ${param.description}")
+            }
+        }
+    }
     
     /**
      * Format tool response for LLM context

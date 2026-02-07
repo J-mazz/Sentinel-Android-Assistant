@@ -3,7 +3,6 @@ package com.mazzlabs.sentinel.capture
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Bitmap
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
@@ -20,10 +19,14 @@ class ScreenCaptureManager(private val service: AccessibilityService) {
     }
 
     private val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private val displayMetrics = DisplayMetrics()
+    private val screenWidth: Int
+    private val screenHeight: Int
 
     init {
-        windowManager.defaultDisplay.getRealMetrics(displayMetrics)
+        val metrics = windowManager.currentWindowMetrics
+        val bounds = metrics.bounds
+        screenWidth = bounds.width()
+        screenHeight = bounds.height()
     }
 
     /**
@@ -58,8 +61,8 @@ class ScreenCaptureManager(private val service: AccessibilityService) {
      */
     private fun captureFromAccessibilityTree(): Bitmap? {
         return Bitmap.createBitmap(
-            displayMetrics.widthPixels,
-            displayMetrics.heightPixels,
+            screenWidth,
+            screenHeight,
             Bitmap.Config.ARGB_8888
         )
     }

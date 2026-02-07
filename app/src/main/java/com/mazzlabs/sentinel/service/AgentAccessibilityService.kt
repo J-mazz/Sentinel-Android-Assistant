@@ -23,6 +23,8 @@ import com.mazzlabs.sentinel.overlay.SelectionOverlayManager
 import com.mazzlabs.sentinel.security.ActionFirewall
 import com.mazzlabs.sentinel.security.ActionRiskClassifier
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
+import com.mazzlabs.sentinel.tools.framework.Tools
+import com.mazzlabs.sentinel.tts.TTSManager
 import com.mazzlabs.sentinel.graph.nodes.SelectionProcessorNode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -80,9 +82,10 @@ class AgentAccessibilityService : AccessibilityService(),
     // Agent controller for tools + UI actions
     private lateinit var agentController: AgentController
     
-    // Input managers
+    // Input/output managers
     private lateinit var overlayManager: OverlayManager
     private lateinit var voiceInputManager: VoiceInputManager
+    private lateinit var ttsManager: TTSManager
     private lateinit var selectionOverlayManager: SelectionOverlayManager
     private lateinit var screenCaptureManager: ScreenCaptureManager
     private lateinit var selectionProcessorNode: SelectionProcessorNode
@@ -109,6 +112,7 @@ class AgentAccessibilityService : AccessibilityService(),
 
     private var isAgentTriggered = false
     private var pendingAction: AgentAction? = null
+    private var pendingToolConfirmation: ToolResponse.Confirmation? = null
     private var volumeUpCallback: (() -> Unit)? = null
 
     override fun onCreate() {
@@ -125,6 +129,9 @@ class AgentAccessibilityService : AccessibilityService(),
         
         voiceInputManager = VoiceInputManager(this)
         voiceInputManager.initialize()
+
+        ttsManager = TTSManager(this)
+        ttsManager.initialize()
 
         selectionOverlayManager = SelectionOverlayManager(this)
         selectionOverlayManager.setListener(this)
@@ -501,18 +508,57 @@ class AgentAccessibilityService : AccessibilityService(),
     }
 
     private fun showSelectionActions(region: Rect, screenshot: Bitmap) {
-        val actions = listOf(
-            "Search for this",
-            "Translate this",
-            "Copy to clipboard",
-            "Share",
-            "Save as image"
-        )
+        serviceScope.launch(Dispatchers.Main) {
+            val actions = mapOf(
+                "Search" to AgentIntent.SEARCH_SELECTED,
+                "Share" to AgentIntent.SHARE_SELECTED,
+                "Save" to AgentIntent.SAVE_SELECTED,
+                "Copy" to AgentIntent.COPY_SELECTED
+            )
 
-        @Suppress("UNUSED_VARIABLE")
-        val unused = actions
+            val builder = android.app.AlertDialog.Builder(
+                this@AgentAccessibilityService,
+                android.R.style.Theme_DeviceDefault_Dialog_Alert
+            )
+            builder.setTitle("Selection Action")
+            builder.setItems(actions.keys.toTypedArray()) { dialog, which ->
+                val selectedIntent = actions.values.toList()[which]
+                dialog.dismiss()
+                processSelectionWithIntent(selectedIntent, region, screenshot)
+            }
+            builder.setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
 
-        broadcastSuccess("Selected region. Choose an action.")
+            val dialog = builder.create()
+            dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+            dialog.show()
+        }
+    }
+
+    private fun processSelectionWithIntent(intent: AgentIntent, region: Rect, screenshot: Bitmap) {
+        serviceScope.launch {
+            try {
+                val ocr = performOCROnRegion(screenshot)
+                val selectedText = ocr.text.ifBlank { "[image region: ${region.width()}x${region.height()}]" }
+
+                val state = AgentState(
+                    sessionId = "main",
+                    intent = intent,
+                    extractedEntities = mapOf(
+                        "selected_text" to selectedText,
+                        "language_hint" to ocr.languageHint,
+                        "ocr_confidence" to ocr.confidence.toString()
+                    )
+                )
+
+                val processed = selectionProcessorNode.process(state)
+                withContext(Dispatchers.Main) {
+                    handleAgentState(processed)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing selection action", e)
+                broadcastError("Failed: ${e.message}")
+            }
+        }
     }
     
     /**
@@ -557,13 +603,21 @@ class AgentAccessibilityService : AccessibilityService(),
             }
             is ToolResponse.Confirmation -> {
                 Log.i(TAG, "Confirmation needed: ${response.message}")
-                // For now, just broadcast - could show dialog
-                broadcastConfirmation(response.message)
+                pendingToolConfirmation = response
+                val dummyAction = AgentAction(
+                    action = com.mazzlabs.sentinel.model.ActionType.CLICK,
+                    target = response.message,
+                    reasoning = "Tool confirmation: ${response.moduleId}.${response.operationId}"
+                )
+                requestPhysicalConfirmation(dummyAction) {
+                    executeConfirmedToolAction(response)
+                }
             }
         }
     }
     
     private fun broadcastSuccess(message: String) {
+        ttsManager.speak(message)
         val intent = Intent(ACTION_EXECUTED).apply {
             putExtra(EXTRA_SUCCESS, true)
             putExtra("message", message)
@@ -576,6 +630,24 @@ class AgentAccessibilityService : AccessibilityService(),
             putExtra("message", message)
         }
         sendBroadcast(intent)
+    }
+
+    private fun executeConfirmedToolAction(confirmation: ToolResponse.Confirmation) {
+        pendingToolConfirmation = null
+        serviceScope.launch {
+            try {
+                val toolExecutor = Tools.getInstance(this@AgentAccessibilityService)
+                val actionId = confirmation.pendingAction["action"] as? String
+                    ?: "${confirmation.moduleId}.${confirmation.operationId}"
+                val result = toolExecutor.execute(actionId, confirmation.pendingAction)
+                withContext(Dispatchers.Main) {
+                    handleToolResult(result)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error executing confirmed tool action", e)
+                broadcastError("Confirmed action failed: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -698,9 +770,10 @@ class AgentAccessibilityService : AccessibilityService(),
     }
 
     override fun onDestroy() {
-        // Clean up overlay and voice input
+        // Clean up overlay, voice input, and TTS
         overlayManager.hide()
         voiceInputManager.release()
+        ttsManager.release()
         
         instance = null
         serviceScope.cancel()

@@ -3,7 +3,8 @@ package com.mazzlabs.sentinel.graph
 import android.content.Context
 import android.util.Log
 import com.mazzlabs.sentinel.graph.nodes.*
-import com.mazzlabs.sentinel.tools.*
+import com.mazzlabs.sentinel.tools.framework.ToolExecutor
+import com.mazzlabs.sentinel.tools.framework.Tools
 
 /**
  * EnhancedAgentOrchestrator - stateful, session-based agent execution.
@@ -41,24 +42,11 @@ class EnhancedAgentOrchestrator(private val context: Context) {
     }
 
     private val sessionManager = SessionManager(context)
-    private val toolRegistry = ToolRegistry()
+    private val toolExecutor = Tools.getInstance(context)
     private lateinit var graph: AgentGraph
 
     init {
-        registerTools()
         buildEnhancedGraph()
-    }
-
-    private fun registerTools() {
-        Log.i(TAG, "Registering tools...")
-        toolRegistry.register(CalendarReadTool())
-        toolRegistry.register(CalendarWriteTool())
-        toolRegistry.register(AlarmCreateTool())
-        toolRegistry.register(TimerCreateTool())
-        toolRegistry.register(PhoneCallTool())
-        toolRegistry.register(ContactLookupTool())
-        toolRegistry.register(SmsSendTool())
-        Log.i(TAG, "Registered ${toolRegistry.getAll().size} tools")
     }
 
     private fun buildEnhancedGraph() {
@@ -75,9 +63,9 @@ class EnhancedAgentOrchestrator(private val context: Context) {
             .addNode("plan_executor", PlanExecutorNode())
 
             // Execution nodes
-            .addNode("tool_selector", ToolSelectorNode(toolRegistry))
-            .addNode("param_extractor", ParameterExtractorNode(toolRegistry))
-            .addNode("tool_executor", ToolExecutorNode(toolRegistry, context))
+            .addNode("tool_selector", ToolSelectorNode())
+            .addNode("param_extractor", ParameterExtractorNode(toolExecutor))
+            .addNode("tool_executor", ToolExecutorNode(toolExecutor))
             .addNode("ui_action", UIActionNode())
 
             // Response generation

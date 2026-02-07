@@ -6,10 +6,10 @@ import org.junit.Test
 class AgentStateTest {
 
     @Test
-    fun `copy updates fields and appends history`() {
+    fun `update updates fields and appends history`() {
         val state = AgentState(currentNode = "start", iteration = 0)
 
-        val updated = state.copy("currentNode" to "next", "response" to "ok")
+        val updated = state.update("currentNode" to "next", "response" to "ok")
 
         assertThat(updated.currentNode).isEqualTo("next")
         assertThat(updated.response).isEqualTo("ok")

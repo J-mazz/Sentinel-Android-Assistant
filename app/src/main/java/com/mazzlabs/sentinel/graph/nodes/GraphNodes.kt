@@ -1,6 +1,5 @@
 package com.mazzlabs.sentinel.graph.nodes
 
-import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -10,38 +9,37 @@ import com.mazzlabs.sentinel.graph.*
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.model.ScrollDirection
-import com.mazzlabs.sentinel.tools.Tool
-import com.mazzlabs.sentinel.tools.ToolRegistry
-import com.mazzlabs.sentinel.tools.ToolResult
+import com.mazzlabs.sentinel.tools.framework.ToolExecutor
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
 
 /**
  * IntentClassifierNode - Determines user intent from query
- * 
+ *
  * Uses the LLM to classify intent into predefined categories.
  */
 class IntentClassifierNode(
-    private val toolRegistry: ToolRegistry
+    private val toolExecutor: ToolExecutor
 ) : AgentNode {
-    
+
     companion object {
         private const val TAG = "IntentClassifierNode"
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
         Log.d(TAG, "Classifying intent for: ${state.userQuery}")
-        
+
         val prompt = buildClassificationPrompt(state)
-        
+
         return try {
             val grammar = GrammarManager.getGrammarPath("intent.gbnf")
             val response = SentinelApplication.getInstance()
                 .nativeBridge
                 .inferWithGrammar(prompt, "", grammar)
-            
+
             Log.d(TAG, "Classification response: $response")
-            
+
             val (intent, entities) = parseClassificationResponse(response)
-            
+
             state.copy(
                 intent = intent,
                 extractedEntities = entities,
@@ -55,10 +53,10 @@ class IntentClassifierNode(
             )
         }
     }
-    
+
     private fun buildClassificationPrompt(state: AgentState): String {
-        val toolsDesc = toolRegistry.generateToolsPrompt()
-        
+        val toolsDesc = toolExecutor.getToolSchema(compact = true)
+
         return """
 Classify the user's intent and extract relevant entities.
 
@@ -68,16 +66,16 @@ $toolsDesc
 
 Respond with JSON only:
 {
-    "intent": "one of: READ_CALENDAR, CREATE_EVENT, CREATE_ALARM, CALL_CONTACT, SEND_SMS, SEARCH, CLICK_ELEMENT, SCROLL_SCREEN, TYPE_TEXT, GO_BACK, GO_HOME, ANSWER_QUESTION, UNKNOWN",
+    "intent": "one of: READ_CALENDAR, CREATE_EVENT, UPDATE_EVENT, DELETE_EVENT, CREATE_ALARM, LIST_ALARMS, DELETE_ALARM, CALL_CONTACT, SEND_SMS, SEARCH, CLICK_ELEMENT, SCROLL_SCREEN, TYPE_TEXT, GO_BACK, GO_HOME, ANSWER_QUESTION, UNKNOWN",
     "entities": {
         "relevant_key": "extracted_value"
     },
-    "selected_tool": "tool_name or null if UI action",
+    "selected_tool": "module.operation or null if UI action",
     "reasoning": "brief explanation"
 }
 """.trimIndent()
     }
-    
+
     private fun parseClassificationResponse(response: String): Pair<AgentIntent, Map<String, String>> {
         return try {
             val gson = Gson()
@@ -100,7 +98,6 @@ Respond with JSON only:
 
             intent to entities
         } catch (e: Exception) {
-            // Include the response in the log to aid debugging (truncated to avoid excessive logging)
             val truncatedResponse = response.take(500)
             Log.e(TAG, "Failed to parse classification response: '$truncatedResponse'${if (response.length > 500) "... (truncated)" else ""}", e)
             AgentIntent.UNKNOWN to emptyMap()
@@ -109,33 +106,35 @@ Respond with JSON only:
 }
 
 /**
- * ToolSelectorNode - Selects appropriate tool based on intent
+ * ToolSelectorNode - Selects appropriate tool module operation based on intent
  */
-class ToolSelectorNode(
-    private val toolRegistry: ToolRegistry
-) : AgentNode {
-    
+class ToolSelectorNode : AgentNode {
+
     companion object {
         private const val TAG = "ToolSelectorNode"
-        
+
         private val INTENT_TO_TOOL = mapOf(
-            AgentIntent.READ_CALENDAR to "calendar_read",
-            AgentIntent.CREATE_EVENT to "calendar_create",
-            AgentIntent.CREATE_ALARM to "alarm_create",
-            AgentIntent.CALL_CONTACT to "phone_call",
-            AgentIntent.SEND_SMS to "sms_send"
+            AgentIntent.READ_CALENDAR to "calendar.read_events",
+            AgentIntent.CREATE_EVENT to "calendar.create_event",
+            AgentIntent.UPDATE_EVENT to "calendar.update_event",
+            AgentIntent.DELETE_EVENT to "calendar.delete_event",
+            AgentIntent.CREATE_ALARM to "clock.create_alarm",
+            AgentIntent.LIST_ALARMS to "clock.show_alarms",
+            AgentIntent.DELETE_ALARM to "clock.dismiss_alarm",
+            AgentIntent.CALL_CONTACT to "contacts.call_contact",
+            AgentIntent.SEND_SMS to "messaging.send_sms"
         )
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
         val intent = state.intent ?: return state.copy(error = "No intent classified")
-        
-        val toolName = INTENT_TO_TOOL[intent]
-        
-        return if (toolName != null && toolRegistry.get(toolName) != null) {
-            Log.d(TAG, "Selected tool: $toolName for intent: $intent")
+
+        val toolCall = INTENT_TO_TOOL[intent]
+
+        return if (toolCall != null) {
+            Log.d(TAG, "Selected tool: $toolCall for intent: $intent")
             state.copy(
-                selectedTool = toolName,
+                selectedTool = toolCall,
                 currentNode = "tool_selector"
             )
         } else {
@@ -152,20 +151,17 @@ class ToolSelectorNode(
  * ParameterExtractorNode - Extracts tool parameters from entities
  */
 class ParameterExtractorNode(
-    private val toolRegistry: ToolRegistry
+    private val toolExecutor: ToolExecutor
 ) : AgentNode {
-    
+
     companion object {
         private const val TAG = "ParameterExtractorNode"
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
-        val toolName = state.selectedTool 
+        val toolCall = state.selectedTool
             ?: return state.copy(error = "No tool selected")
-        
-        val tool = toolRegistry.get(toolName)
-            ?: return state.copy(error = "Tool not found: $toolName")
-        
+
         // If entities already contain enough info, use them
         if (state.extractedEntities.isNotEmpty()) {
             Log.d(TAG, "Using pre-extracted entities: ${state.extractedEntities}")
@@ -174,18 +170,19 @@ class ParameterExtractorNode(
                 currentNode = "param_extractor"
             )
         }
-        
+
         // Otherwise, use LLM to extract parameters
-        val prompt = buildExtractionPrompt(state, tool)
-        
+        val schema = toolExecutor.getOperationSchema(toolCall) ?: "No schema available"
+        val prompt = buildExtractionPrompt(state, toolCall, schema)
+
         return try {
             val grammar = GrammarManager.getGrammarPath("tool_params.gbnf")
             val response = SentinelApplication.getInstance()
                 .nativeBridge
                 .inferWithGrammar(prompt, "", grammar)
-            
+
             val params = parseParameters(response)
-            
+
             state.copy(
                 toolInput = params,
                 currentNode = "param_extractor"
@@ -195,10 +192,10 @@ class ParameterExtractorNode(
             state.copy(error = "Failed to extract parameters: ${e.message}")
         }
     }
-    
-    private fun buildExtractionPrompt(state: AgentState, tool: Tool): String {
+
+    private fun buildExtractionPrompt(state: AgentState, toolCall: String, schema: String): String {
         return """
-Extract parameters for the ${tool.name} tool from the user's request.
+Extract parameters for $toolCall from the user's request.
 
 User query: "${state.userQuery}"
 
@@ -206,7 +203,7 @@ Screen context (may include element_id list):
 ${state.screenContext.take(4000)}
 
 Tool schema:
-${tool.parametersSchema}
+$schema
 
 Respond with JSON containing only the parameter values:
 {
@@ -215,14 +212,13 @@ Respond with JSON containing only the parameter values:
 }
 """.trimIndent()
     }
-    
+
     private fun parseParameters(response: String): Map<String, Any?> {
         return try {
             val gson = Gson()
             val type = object : TypeToken<Map<String, Any?>>() {}.type
             gson.fromJson(response, type) ?: emptyMap()
         } catch (e: Exception) {
-            // Include the response in the log to aid debugging (truncated to avoid excessive logging)
             val truncatedResponse = response.take(500)
             Log.e(TAG, "Failed to parse parameters response: '$truncatedResponse'${if (response.length > 500) "... (truncated)" else ""}", e)
             emptyMap()
@@ -231,40 +227,24 @@ Respond with JSON containing only the parameter values:
 }
 
 /**
- * ToolExecutorNode - Executes the selected tool
+ * ToolExecutorNode - Executes the selected tool via ToolExecutor
  */
 class ToolExecutorNode(
-    private val toolRegistry: ToolRegistry,
-    private val context: Context
+    private val toolExecutor: ToolExecutor
 ) : AgentNode {
-    
+
     companion object {
         private const val TAG = "ToolExecutorNode"
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
-        val toolName = state.selectedTool
+        val toolCall = state.selectedTool
             ?: return state.copy(error = "No tool selected")
-        
-        val tool = toolRegistry.get(toolName)
-            ?: return state.copy(error = "Tool not found: $toolName")
-        
-        Log.d(TAG, "Executing tool: $toolName with params: ${state.toolInput}")
-        
-        // Validate parameters
-        val validation = tool.validateParams(state.toolInput)
-        if (validation is com.mazzlabs.sentinel.tools.ValidationResult.Invalid) {
-            return state.copy(error = "Invalid parameters: ${validation.reason}")
-        }
-        
-        // Check permissions
-        if (!toolRegistry.hasPermissions(context, toolName)) {
-            return state.copy(error = "Missing permissions for $toolName")
-        }
-        
-        // Execute
-        val result = tool.execute(state.toolInput, context)
-        
+
+        Log.d(TAG, "Executing tool: $toolCall with params: ${state.toolInput}")
+
+        val result = toolExecutor.execute(toolCall, state.toolInput)
+
         return state.copy(
             toolResults = state.toolResults + result,
             currentNode = "tool_executor"
@@ -276,36 +256,42 @@ class ToolExecutorNode(
  * ResponseGeneratorNode - Generates final response from tool results
  */
 class ResponseGeneratorNode : AgentNode {
-    
+
     companion object {
         private const val TAG = "ResponseGeneratorNode"
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
         val lastResult = state.toolResults.lastOrNull()
-        
+
         val response = when (lastResult) {
-            is ToolResult.Success -> {
+            is ToolResponse.Success -> {
                 "${lastResult.message}\n${formatData(lastResult.data)}"
             }
-            is ToolResult.Failure -> {
+            is ToolResponse.Error -> {
                 "Sorry, I couldn't complete that: ${lastResult.message}"
+            }
+            is ToolResponse.PermissionRequired -> {
+                "I need the following permissions: ${lastResult.permissions.joinToString()}"
+            }
+            is ToolResponse.Confirmation -> {
+                lastResult.message
             }
             null -> {
                 "I processed your request but have no specific result to report."
             }
         }
-        
+
         return state.copy(
             response = response,
             isComplete = true,
             currentNode = "response_generator"
         )
     }
-    
+
     private fun formatData(data: Map<String, Any?>): String {
         if (data.isEmpty()) return ""
-        
+
         return buildString {
             data.forEach { (key, value) ->
                 when (value) {
@@ -326,14 +312,14 @@ class ResponseGeneratorNode : AgentNode {
  * UIActionNode - Generates UI actions when no tool is applicable
  */
 class UIActionNode : AgentNode {
-    
+
     companion object {
         private const val TAG = "UIActionNode"
     }
-    
+
     override suspend fun process(state: AgentState): AgentState {
         val intent = state.intent ?: AgentIntent.UNKNOWN
-        
+
         val action = when (intent) {
             AgentIntent.GO_BACK -> AgentAction(ActionType.BACK, reasoning = "User requested to go back")
             AgentIntent.GO_HOME -> AgentAction(ActionType.HOME, reasoning = "User requested to go home")
@@ -371,7 +357,7 @@ class UIActionNode : AgentNode {
             }
             else -> AgentAction(ActionType.NONE, reasoning = "No action determined")
         }
-        
+
         return state.copy(
             action = action,
             isComplete = true,

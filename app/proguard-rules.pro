@@ -30,3 +30,24 @@
 -keepclassmembers class kotlinx.coroutines.** {
     volatile <fields>;
 }
+
+# Graph state and orchestration
+-keep class com.mazzlabs.sentinel.graph.AgentState { *; }
+-keep class com.mazzlabs.sentinel.graph.AgentIntent { *; }
+-keep class com.mazzlabs.sentinel.graph.Plan { *; }
+-keep class com.mazzlabs.sentinel.graph.PlanStep { *; }
+-keep class com.mazzlabs.sentinel.graph.Message { *; }
+-keep class com.mazzlabs.sentinel.graph.Role { *; }
+
+# Tool framework
+-keep class com.mazzlabs.sentinel.tools.framework.ToolResponse { *; }
+-keep class com.mazzlabs.sentinel.tools.framework.ToolResponse$* { *; }
+-keep class com.mazzlabs.sentinel.tools.framework.ErrorCode { *; }
+-keep class com.mazzlabs.sentinel.tools.framework.ToolModule { *; }
+-keep class com.mazzlabs.sentinel.tools.modules.** { *; }
+
+# Security
+-keep class com.mazzlabs.sentinel.security.** { *; }
+
+# Model classes used in serialization
+-keep class com.mazzlabs.sentinel.model.** { *; }

@@ -5,7 +5,8 @@ import com.mazzlabs.sentinel.graph.nodes.ClarificationNode
 import com.mazzlabs.sentinel.graph.nodes.ContextAnalyzerNode
 import com.mazzlabs.sentinel.graph.nodes.EnhancedResponseGeneratorNode
 import com.mazzlabs.sentinel.graph.nodes.PlanExecutorNode
-import com.mazzlabs.sentinel.tools.ToolResult
+import com.mazzlabs.sentinel.tools.framework.ErrorCode
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -16,7 +17,7 @@ class EnhancedGraphNodesTest {
         val node = ContextAnalyzerNode()
         val state = AgentState(
             intent = AgentIntent.CLICK_ELEMENT,
-            screenContext = "TextField[Name](editable) | Button[Save](clickable)"
+            screenContext = "  1. [edit] Name\n  2. [click] Save"
         )
 
         val result = node.process(state)
@@ -35,7 +36,7 @@ class EnhancedGraphNodesTest {
                     description = "Open calendar",
                     intent = AgentIntent.READ_CALENDAR,
                     requiredEntities = emptyList(),
-                    toolCall = "calendar_read"
+                    toolCall = "calendar.read_events"
                 )
             )
         )
@@ -44,7 +45,7 @@ class EnhancedGraphNodesTest {
         val result = node.process(state)
 
         assertThat(result.intent).isEqualTo(AgentIntent.READ_CALENDAR)
-        assertThat(result.selectedTool).isEqualTo("calendar_read")
+        assertThat(result.selectedTool).isEqualTo("calendar.read_events")
         assertThat(result.plan?.currentStepIndex).isEqualTo(1)
     }
 
@@ -61,10 +62,12 @@ class EnhancedGraphNodesTest {
     }
 
     @Test
-    fun `EnhancedResponseGeneratorNode formats tool failure`() = runTest {
+    fun `EnhancedResponseGeneratorNode formats tool error`() = runTest {
         val node = EnhancedResponseGeneratorNode()
         val state = AgentState(
-            toolResults = listOf(ToolResult.Failure("calendar_read", "boom"))
+            toolResults = listOf(
+                ToolResponse.Error("calendar", "read_events", ErrorCode.SYSTEM_ERROR, "boom")
+            )
         )
 
         val result = node.process(state)

@@ -14,7 +14,7 @@ import com.mazzlabs.sentinel.graph.PlanStep
 import com.mazzlabs.sentinel.graph.Role
 import com.mazzlabs.sentinel.graph.Message
 import com.mazzlabs.sentinel.model.UIElement
-import com.mazzlabs.sentinel.tools.ToolResult
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
 import org.json.JSONObject
 
 class IntentParserNode : AgentNode {
@@ -223,30 +223,41 @@ class ContextAnalyzerNode : AgentNode {
     private fun extractFocusedElement(screenContext: String): UIElement? {
         if (screenContext.isBlank()) return null
 
-        val elements = screenContext.split(" | ")
+        val elements = screenContext.lines()
             .mapNotNull { parseElement(it) }
 
-        return elements.firstOrNull { it.isEditable } ?: 
-            elements.firstOrNull { it.isClickable } ?: 
+        return elements.firstOrNull { it.isEditable } ?:
+            elements.firstOrNull { it.isClickable } ?:
             elements.firstOrNull()
     }
 
+    /**
+     * Parse ElementRegistry format: "  1. [click|edit] Label text"
+     */
     private fun parseElement(raw: String): UIElement? {
-        val pattern = Regex("""([^\[]+)\[([^]]+)](\(([^)]+)\))?""")
+        val pattern = Regex("""\s*(\d+)\.\s+\[([^\]]+)]\s+(.+)""")
         val match = pattern.find(raw.trim()) ?: return null
 
-        val type = match.groupValues[1].trim()
-        val label = match.groupValues[2].trim()
-        val attrs = match.groupValues.getOrNull(4)?.split(",")?.map { it.trim() } ?: emptyList()
+        val elementId = match.groupValues[1]
+        val flags = match.groupValues[2].split("|").map { it.trim().lowercase() }
+        val label = match.groupValues[3].trim()
 
-        val isClickable = attrs.any { it.equals("clickable", true) }
-        val isEditable = attrs.any { it.equals("editable", true) }
+        val isClickable = "click" in flags
+        val isEditable = "edit" in flags
+        val isScrollable = "scroll" in flags
+
+        val type = when {
+            isEditable -> "EditText"
+            isScrollable -> "ScrollView"
+            isClickable -> "Button"
+            else -> "View"
+        }
 
         return UIElement(
             type = type,
             text = label,
             contentDescription = null,
-            viewId = null,
+            viewId = elementId,
             isClickable = isClickable,
             isEditable = isEditable,
             bounds = null
@@ -333,13 +344,14 @@ Respond with JSON:
             null
         }
     }
-}
+
     private fun validatePlan(plan: Plan): Plan? {
         val validSteps = plan.steps.filter { step ->
             step.intent != AgentIntent.UNKNOWN && step.description.isNotBlank()
         }
         return if (validSteps.isEmpty()) null else plan.copy(steps = validSteps)
     }
+}
 
 class PlanExecutorNode : AgentNode {
     override suspend fun process(state: AgentState): AgentState {
@@ -407,10 +419,12 @@ class EnhancedResponseGeneratorNode : AgentNode {
         )
     }
 
-    private fun formatToolResults(result: ToolResult): String {
+    private fun formatToolResults(result: ToolResponse): String {
         return when (result) {
-            is ToolResult.Success -> result.message
-            is ToolResult.Failure -> "Error: ${result.message}"
+            is ToolResponse.Success -> result.message
+            is ToolResponse.Error -> "Error: ${result.message}"
+            is ToolResponse.PermissionRequired -> "Permissions needed: ${result.permissions.joinToString()}"
+            is ToolResponse.Confirmation -> result.message
         }
     }
 }

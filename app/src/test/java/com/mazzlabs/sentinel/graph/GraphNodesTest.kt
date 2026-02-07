@@ -1,7 +1,5 @@
 package com.mazzlabs.sentinel.graph
 
-import android.content.Context
-import android.content.pm.PackageManager
 import com.google.common.truth.Truth.assertThat
 import com.mazzlabs.sentinel.graph.nodes.ParameterExtractorNode
 import com.mazzlabs.sentinel.graph.nodes.ResponseGeneratorNode
@@ -10,10 +8,9 @@ import com.mazzlabs.sentinel.graph.nodes.ToolSelectorNode
 import com.mazzlabs.sentinel.graph.nodes.UIActionNode
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.ScrollDirection
-import com.mazzlabs.sentinel.tools.Tool
-import com.mazzlabs.sentinel.tools.ToolRegistry
-import com.mazzlabs.sentinel.tools.ToolResult
-import com.mazzlabs.sentinel.tools.ValidationResult
+import com.mazzlabs.sentinel.tools.framework.ErrorCode
+import com.mazzlabs.sentinel.tools.framework.ToolExecutor
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -23,29 +20,56 @@ import org.junit.Test
 class GraphNodesTest {
 
     @Test
-    fun `ToolSelectorNode selects registered tool for intent`() = runTest {
-        val registry = ToolRegistry()
-        registry.register(TestTool(name = "calendar_read"))
-
+    fun `ToolSelectorNode selects tool for calendar intent`() = runTest {
         val state = AgentState(intent = AgentIntent.READ_CALENDAR)
-        val node = ToolSelectorNode(registry)
+        val node = ToolSelectorNode()
 
         val result = node.process(state)
 
-        assertThat(result.selectedTool).isEqualTo("calendar_read")
+        assertThat(result.selectedTool).isEqualTo("calendar.read_events")
+        assertThat(result.currentNode).isEqualTo("tool_selector")
+    }
+
+    @Test
+    fun `ToolSelectorNode maps all tool intents`() = runTest {
+        val node = ToolSelectorNode()
+
+        val mappings = mapOf(
+            AgentIntent.READ_CALENDAR to "calendar.read_events",
+            AgentIntent.CREATE_EVENT to "calendar.create_event",
+            AgentIntent.UPDATE_EVENT to "calendar.update_event",
+            AgentIntent.DELETE_EVENT to "calendar.delete_event",
+            AgentIntent.CREATE_ALARM to "clock.create_alarm",
+            AgentIntent.LIST_ALARMS to "clock.show_alarms",
+            AgentIntent.DELETE_ALARM to "clock.dismiss_alarm",
+            AgentIntent.CALL_CONTACT to "contacts.call_contact",
+            AgentIntent.SEND_SMS to "messaging.send_sms"
+        )
+
+        for ((intent, expectedTool) in mappings) {
+            val result = node.process(AgentState(intent = intent))
+            assertThat(result.selectedTool).isEqualTo(expectedTool)
+        }
+    }
+
+    @Test
+    fun `ToolSelectorNode returns null for UI intents`() = runTest {
+        val node = ToolSelectorNode()
+        val result = node.process(AgentState(intent = AgentIntent.GO_BACK))
+
+        assertThat(result.selectedTool).isNull()
         assertThat(result.currentNode).isEqualTo("tool_selector")
     }
 
     @Test
     fun `ParameterExtractorNode uses pre-extracted entities`() = runTest {
-        val registry = ToolRegistry()
-        registry.register(TestTool(name = "calendar_read"))
+        val toolExecutor = mockk<ToolExecutor>()
 
         val state = AgentState(
-            selectedTool = "calendar_read",
+            selectedTool = "calendar.read_events",
             extractedEntities = mapOf("title" to "Team Sync")
         )
-        val node = ParameterExtractorNode(registry)
+        val node = ParameterExtractorNode(toolExecutor)
 
         val result = node.process(state)
 
@@ -54,42 +78,31 @@ class GraphNodesTest {
     }
 
     @Test
-    fun `ToolExecutorNode executes tool when valid and permitted`() = runTest {
-        val registry = ToolRegistry()
-        val tool = TestTool(name = "calendar_read")
-        registry.register(tool)
+    fun `ToolExecutorNode executes tool and appends result`() = runTest {
+        val toolExecutor = mockk<ToolExecutor>()
+        coEvery { toolExecutor.execute("calendar.read_events", any()) } returns
+            ToolResponse.Success("calendar", "read_events", "Found 2 events")
 
-        val context = mockk<Context>()
-        every { context.checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
-        coEvery { tool.execute(any(), any()) } returns ToolResult.Success("calendar_read", "ok")
-
-        val node = ToolExecutorNode(registry, context)
-        val state = AgentState(selectedTool = "calendar_read", toolInput = mapOf("id" to "1"))
+        val node = ToolExecutorNode(toolExecutor)
+        val state = AgentState(
+            selectedTool = "calendar.read_events",
+            toolInput = mapOf("date" to "2024-01-01")
+        )
 
         val result = node.process(state)
 
         assertThat(result.toolResults).hasSize(1)
+        assertThat(result.toolResults.first()).isInstanceOf(ToolResponse.Success::class.java)
         assertThat(result.currentNode).isEqualTo("tool_executor")
     }
 
     @Test
-    fun `ToolExecutorNode rejects invalid parameters`() = runTest {
-        val registry = ToolRegistry()
-        val tool = TestTool(
-            name = "calendar_read",
-            validationResult = ValidationResult.Invalid("missing id")
-        )
-        registry.register(tool)
+    fun `ToolExecutorNode returns error when no tool selected`() = runTest {
+        val toolExecutor = mockk<ToolExecutor>()
+        val node = ToolExecutorNode(toolExecutor)
+        val result = node.process(AgentState(selectedTool = null))
 
-        val context = mockk<Context>()
-        every { context.checkSelfPermission(any()) } returns PackageManager.PERMISSION_GRANTED
-
-        val node = ToolExecutorNode(registry, context)
-        val state = AgentState(selectedTool = "calendar_read")
-
-        val result = node.process(state)
-
-        assertThat(result.error).contains("Invalid parameters")
+        assertThat(result.error).contains("No tool selected")
     }
 
     @Test
@@ -97,8 +110,9 @@ class GraphNodesTest {
         val node = ResponseGeneratorNode()
         val state = AgentState(
             toolResults = listOf(
-                ToolResult.Success(
-                    toolName = "calendar_read",
+                ToolResponse.Success(
+                    moduleId = "calendar",
+                    operationId = "read_events",
                     message = "Found events",
                     data = mapOf("events" to listOf("A", "B"))
                 )
@@ -110,6 +124,21 @@ class GraphNodesTest {
         assertThat(result.response).contains("Found events")
         assertThat(result.response).contains("events:")
         assertThat(result.response).contains("- A")
+    }
+
+    @Test
+    fun `ResponseGeneratorNode formats error results`() = runTest {
+        val node = ResponseGeneratorNode()
+        val state = AgentState(
+            toolResults = listOf(
+                ToolResponse.Error("calendar", "read_events", ErrorCode.SYSTEM_ERROR, "DB error")
+            )
+        )
+
+        val result = node.process(state)
+
+        assertThat(result.response).contains("couldn't complete")
+        assertThat(result.response).contains("DB error")
     }
 
     @Test
@@ -139,22 +168,5 @@ class GraphNodesTest {
         assertThat(result.action?.action).isEqualTo(ActionType.CLICK)
         assertThat(result.action?.elementId).isEqualTo(42)
         assertThat(result.action?.target).isEqualTo("submit")
-    }
-
-    private class TestTool(
-        override val name: String,
-        private val validationResult: ValidationResult = ValidationResult.Valid
-    ) : Tool {
-        override val description: String = "test tool"
-        override val parametersSchema: String = "{}"
-        override val requiredPermissions: List<String> = emptyList()
-
-        override suspend fun execute(params: Map<String, Any?>, context: Context): ToolResult {
-            return ToolResult.Success(name, "ok")
-        }
-
-        override fun validateParams(params: Map<String, Any?>): ValidationResult {
-            return validationResult
-        }
     }
 }

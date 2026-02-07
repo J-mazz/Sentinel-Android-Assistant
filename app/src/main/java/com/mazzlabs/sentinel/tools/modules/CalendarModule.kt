@@ -134,6 +134,22 @@ class CalendarModule : ToolModule {
             )
         ),
         ToolOperation(
+            operationId = "update_event",
+            description = "Update an existing calendar event",
+            parameters = listOf(
+                ToolParameter("event_id", ParameterType.STRING, "Event ID to update", required = true),
+                ToolParameter("title", ParameterType.STRING, "New event title", required = false),
+                ToolParameter("start_time", ParameterType.DATETIME, "New start time (YYYY-MM-DDTHH:MM:SS)", required = false),
+                ToolParameter("end_time", ParameterType.DATETIME, "New end time (YYYY-MM-DDTHH:MM:SS)", required = false),
+                ToolParameter("location", ParameterType.STRING, "New event location", required = false),
+                ToolParameter("description", ParameterType.STRING, "New event description", required = false)
+            ),
+            examples = listOf(
+                ToolExample("Move my 3pm meeting to 4pm", "update_event", mapOf("event_id" to "42", "start_time" to "2026-01-10T16:00:00")),
+                ToolExample("Change the meeting location to Room B", "update_event", mapOf("event_id" to "42", "location" to "Room B"))
+            )
+        ),
+        ToolOperation(
             operationId = "delete_event",
             description = "Delete a calendar event by ID",
             parameters = listOf(
@@ -155,6 +171,7 @@ class CalendarModule : ToolModule {
         return when (operationId) {
             "read_events" -> readEvents(params, context)
             "create_event" -> createEvent(params, context)
+            "update_event" -> updateEvent(params, context)
             "delete_event" -> deleteEvent(params, context)
             "get_calendars" -> getCalendars(context)
             else -> ToolResponse.Error(moduleId, operationId, ErrorCode.NOT_FOUND, "Unknown operation: $operationId")
@@ -331,6 +348,65 @@ class CalendarModule : ToolModule {
         }
     }
     
+    private fun updateEvent(params: Map<String, Any?>, context: Context): ToolResponse {
+        val eventId = params["event_id"] as? String
+            ?: return ToolResponse.Error(moduleId, "update_event", ErrorCode.INVALID_PARAMS, "event_id required")
+
+        try {
+            val values = ContentValues()
+            var updatedFields = 0
+
+            (params["title"] as? String)?.let {
+                values.put(CalendarContract.Events.TITLE, it)
+                updatedFields++
+            }
+            (params["start_time"] as? String)?.let { startTimeStr ->
+                val startMillis = safeParseDatetime(startTimeStr)
+                    ?: return ToolResponse.Error(moduleId, "update_event", ErrorCode.INVALID_PARAMS, "Invalid start_time format: $startTimeStr")
+                values.put(CalendarContract.Events.DTSTART, startMillis)
+                updatedFields++
+            }
+            (params["end_time"] as? String)?.let { endTimeStr ->
+                val endMillis = safeParseDatetime(endTimeStr)
+                    ?: return ToolResponse.Error(moduleId, "update_event", ErrorCode.INVALID_PARAMS, "Invalid end_time format: $endTimeStr")
+                values.put(CalendarContract.Events.DTEND, endMillis)
+                updatedFields++
+            }
+            (params["location"] as? String)?.let {
+                values.put(CalendarContract.Events.EVENT_LOCATION, it)
+                updatedFields++
+            }
+            (params["description"] as? String)?.let {
+                values.put(CalendarContract.Events.DESCRIPTION, it)
+                updatedFields++
+            }
+
+            if (updatedFields == 0) {
+                return ToolResponse.Error(moduleId, "update_event", ErrorCode.INVALID_PARAMS, "No fields to update")
+            }
+
+            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId.toLong())
+            val rows = context.contentResolver.update(uri, values, null, null)
+
+            return if (rows > 0) {
+                Log.i(TAG, "Updated event $eventId ($updatedFields fields)")
+                ToolResponse.Success(
+                    moduleId = moduleId,
+                    operationId = "update_event",
+                    message = "Event updated ($updatedFields field(s) changed)",
+                    data = mapOf("event_id" to eventId, "fields_updated" to updatedFields)
+                )
+            } else {
+                ToolResponse.Error(moduleId, "update_event", ErrorCode.NOT_FOUND, "Event not found: $eventId")
+            }
+        } catch (e: NumberFormatException) {
+            return ToolResponse.Error(moduleId, "update_event", ErrorCode.INVALID_PARAMS, "Invalid event_id: $eventId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating event", e)
+            return ToolResponse.Error(moduleId, "update_event", ErrorCode.SYSTEM_ERROR, "Failed to update event: ${e.message}")
+        }
+    }
+
     private fun deleteEvent(params: Map<String, Any?>, context: Context): ToolResponse {
         val eventId = params["event_id"] as? String
             ?: return ToolResponse.Error(moduleId, "delete_event", ErrorCode.INVALID_PARAMS, "event_id required")

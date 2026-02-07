@@ -2,7 +2,7 @@ package com.mazzlabs.sentinel.graph
 
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.model.UIElement
-import com.mazzlabs.sentinel.tools.ToolResult
+import com.mazzlabs.sentinel.tools.framework.ToolResponse
 
 /**
  * AgentState - Immutable state object passed through the execution graph
@@ -30,7 +30,7 @@ data class AgentState(
     // Tool execution
     val selectedTool: String? = null,
     val toolInput: Map<String, Any?> = emptyMap(),
-    val toolResults: List<ToolResult> = emptyList(),
+    val toolResults: List<ToolResponse> = emptyList(),
     
     // Output
     val response: String = "",
@@ -45,9 +45,11 @@ data class AgentState(
     val maxIterations: Int = 10
 ) {
     /**
-     * Create new state with updates (immutable pattern)
+     * Create new state with updates (immutable pattern).
+     * Automatically increments iteration and appends currentNode to history.
+     * Use data class copy() for simple field updates without side effects.
      */
-    fun copy(
+    fun update(
         vararg updates: Pair<String, Any?>
     ): AgentState {
         var newState = this
@@ -66,7 +68,7 @@ data class AgentState(
                 "focusedElement" -> newState.copy(focusedElement = value as? UIElement)
                 "selectedTool" -> newState.copy(selectedTool = value as? String)
                 "toolInput" -> newState.copy(toolInput = value as Map<String, Any?>)
-                "toolResults" -> newState.copy(toolResults = value as List<ToolResult>)
+                "toolResults" -> newState.copy(toolResults = value as List<ToolResponse>)
                 "response" -> newState.copy(response = value as String)
                 "action" -> newState.copy(action = value as? AgentAction)
                 "needsUserInput" -> newState.copy(needsUserInput = value as Boolean)
