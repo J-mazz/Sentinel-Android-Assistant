@@ -40,15 +40,16 @@ class GatewayEventBus {
     /**
      * Wait for a specific event type with timeout
      */
-    suspend inline fun <reified T : GatewayEvent> awaitEvent(
+    @Suppress("UNCHECKED_CAST")
+    suspend fun <T : GatewayEvent> awaitEvent(
+        clazz: Class<T>,
         timeoutMs: Long = 30000L,
-        crossinline predicate: (T) -> Boolean = { true }
+        predicate: (T) -> Boolean = { true }
     ): T? {
         return withTimeoutOrNull(timeoutMs) {
             _events
-                .filterIsInstance<T>()
-                .filter { predicate(it) }
-                .first()
+                .filter { clazz.isInstance(it) && predicate(it as T) }
+                .first() as T
         }
     }
 
@@ -59,7 +60,7 @@ class GatewayEventBus {
         sessionKey: String,
         timeoutMs: Long = 120000L
     ): GatewayEvent.AgentComplete? {
-        return awaitEvent<GatewayEvent.AgentComplete>(timeoutMs) {
+        return awaitEvent(GatewayEvent.AgentComplete::class.java, timeoutMs) {
             it.sessionKey == sessionKey
         }
     }

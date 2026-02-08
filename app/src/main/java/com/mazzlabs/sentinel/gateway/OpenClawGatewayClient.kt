@@ -435,7 +435,7 @@ class OpenClawGatewayClient(
         }
 
         val response = okHttpClient.newCall(requestBuilder.build()).execute()
-        val responseBody = response.body()?.string() ?: """{"ok":false,"error":"Empty response"}"""
+        val responseBody = response.body?.string() ?: """{"ok":false,"error":"Empty response"}"""
 
         json.decodeFromString<ToolInvocationResult>(responseBody)
     }

@@ -97,6 +97,11 @@ class AgentOrchestrator(private val context: Context) {
                     AgentIntent.SHARE_SELECTED,
                     AgentIntent.EXTRACT_DATA_FROM_SELECTION -> "ui_action"
 
+                    AgentIntent.SEND_SELECTION_TO_REMOTE,
+                    AgentIntent.ANALYZE_IMAGE_REGION,
+                    AgentIntent.START_DEV_PROJECT,
+                    AgentIntent.CONTINUE_DEV_PROJECT -> "tool_selector"
+
                     AgentIntent.SEARCH,
                     AgentIntent.ANSWER_QUESTION,
                     AgentIntent.UNKNOWN,

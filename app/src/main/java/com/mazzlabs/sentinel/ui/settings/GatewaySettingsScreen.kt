@@ -96,7 +96,7 @@ fun GatewaySettingsScreen(
                                 } else {
                                     // Save config first
                                     authManager.gatewayUrl = gatewayUrl
-                                    authManager.authToken = authToken
+                                    authManager.gatewayToken = authToken
                                     GatewayService.start(context)
                                 }
                             }

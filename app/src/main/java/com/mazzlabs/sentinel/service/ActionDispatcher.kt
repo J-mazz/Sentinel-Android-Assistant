@@ -66,6 +66,14 @@ class ActionDispatcher(private val registry: ElementRegistry) {
                 Log.d(TAG, "NONE action - no operation")
                 true
             }
+            ActionType.REMOTE_EXEC,
+            ActionType.REMOTE_READ,
+            ActionType.REMOTE_WRITE,
+            ActionType.START_DEV_PROJECT,
+            ActionType.SEND_TO_REMOTE -> {
+                Log.d(TAG, "Remote action ${action.action} - handled by gateway tools")
+                true
+            }
         }
     }
 

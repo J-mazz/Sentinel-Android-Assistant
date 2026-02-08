@@ -33,6 +33,11 @@
         <item name="cornerRadius">12dp</item>
     </style>
 
+    <!-- Outlined Button Style -->
+    <style name="Widget.Sentinel.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">12dp</item>
+    </style>
+
     <!-- Input Field Style -->
     <style name="Widget.Sentinel.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
         <item name="boxCornerRadiusTopStart">12dp</item>

@@ -83,6 +83,11 @@ class ActionFirewall {
             ActionType.BACK -> false   // Going back is safe
             ActionType.WAIT -> false   // Waiting is safe
             ActionType.NONE -> false   // No-op is safe
+            ActionType.REMOTE_EXEC -> true  // Remote exec is always dangerous
+            ActionType.REMOTE_READ -> false // Reading remote files is safe
+            ActionType.REMOTE_WRITE -> true // Writing remote files is dangerous
+            ActionType.START_DEV_PROJECT -> false
+            ActionType.SEND_TO_REMOTE -> true // Sending data off-device is dangerous
         }
         
         if (isDangerous) {

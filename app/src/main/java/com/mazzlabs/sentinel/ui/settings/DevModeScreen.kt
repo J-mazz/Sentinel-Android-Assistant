@@ -27,7 +27,7 @@ fun DevModeScreen(
     val app = context.applicationContext as SentinelApplication
     val scope = rememberCoroutineScope()
 
-    val connectionState by app.gatewayConnectionManager?.connectionState
+    val connectionState by app.gatewayConnectionManager?.state
         ?.collectAsState(initial = GatewayConnectionManager.ConnectionState.DISCONNECTED)
         ?: remember { mutableStateOf(GatewayConnectionManager.ConnectionState.DISCONNECTED) }
 
