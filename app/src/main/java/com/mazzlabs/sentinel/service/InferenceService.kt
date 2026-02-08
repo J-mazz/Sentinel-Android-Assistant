@@ -38,10 +38,16 @@ class InferenceService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "InferenceService started")
-        
+
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
-        
+
+        // Start gateway service if configured
+        val app = application as? SentinelApplication
+        if (app?.gatewayAuthManager?.isConfigured() == true) {
+            GatewayService.start(this)
+        }
+
         return START_STICKY
     }
 

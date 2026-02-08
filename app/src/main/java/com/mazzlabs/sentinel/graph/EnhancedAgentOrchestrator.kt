@@ -2,7 +2,10 @@ package com.mazzlabs.sentinel.graph
 
 import android.content.Context
 import android.util.Log
+import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.graph.nodes.*
+import com.mazzlabs.sentinel.graph.workflow.WorkflowFactory
+import com.mazzlabs.sentinel.graph.workflow.WorkflowType
 import com.mazzlabs.sentinel.tools.framework.ToolExecutor
 import com.mazzlabs.sentinel.tools.framework.Tools
 
@@ -44,6 +47,12 @@ class EnhancedAgentOrchestrator(private val context: Context) {
     private val sessionManager = SessionManager(context)
     private val toolExecutor = Tools.getInstance(context)
     private lateinit var graph: AgentGraph
+    private var devGraph: AgentGraph? = null
+
+    private val workflowFactory: WorkflowFactory by lazy {
+        val app = SentinelApplication.getInstance()
+        WorkflowFactory(context, toolExecutor, app.gatewayClient)
+    }
 
     init {
         buildEnhancedGraph()
@@ -140,7 +149,7 @@ class EnhancedAgentOrchestrator(private val context: Context) {
             content = userQuery
         )
 
-        val initialState = currentSession.copy(
+        var initialState = currentSession.copy(
             userQuery = userQuery,
             conversationHistory = updatedHistory,
             screenContext = screenContext,
@@ -149,7 +158,22 @@ class EnhancedAgentOrchestrator(private val context: Context) {
             iteration = 0
         )
 
-        val finalState = graph.invoke(initialState)
+        // Detect workflow type and route accordingly
+        val workflowType = workflowFactory.detectWorkflowType(userQuery, initialState)
+        val activeGraph = when (workflowType) {
+            WorkflowType.DEV_PROJECT -> {
+                initialState = workflowFactory.prepareDevState(userQuery, initialState)
+                if (devGraph == null) {
+                    devGraph = workflowFactory.buildGraph(WorkflowType.DEV_PROJECT)
+                }
+                devGraph!!
+            }
+            WorkflowType.ASSISTANT -> graph
+        }
+
+        Log.i(TAG, "Using ${workflowType.name} workflow for query: $userQuery")
+
+        val finalState = activeGraph.invoke(initialState)
 
         val completeState = finalState.copy(
             conversationHistory = finalState.conversationHistory + Message(

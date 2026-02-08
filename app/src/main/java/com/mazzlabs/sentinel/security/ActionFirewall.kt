@@ -3,6 +3,7 @@ package com.mazzlabs.sentinel.security
 import android.util.Log
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.AgentAction
+import com.mazzlabs.sentinel.security.DataClassifier
 
 /**
  * ActionFirewall - Security Gating Layer
@@ -173,5 +174,52 @@ class ActionFirewall {
     sealed class ValidationResult {
         object Valid : ValidationResult()
         data class Invalid(val reason: String) : ValidationResult()
+    }
+
+    // --- Network action security (Phase 2 extension) ---
+
+    private val dataClassifier = DataClassifier()
+
+    /**
+     * Check if a network-bound action (outgoing payload) is dangerous
+     *
+     * @param method The gateway method being called
+     * @param payload The serialized payload being sent
+     * @return true if the action requires user confirmation
+     */
+    fun isNetworkActionDangerous(method: String, payload: String): Boolean {
+        // Tool invocations that modify remote state
+        val dangerousMethods = setOf(
+            "write", "delete", "exec", "rm", "mv",
+            "git push", "deploy", "publish"
+        )
+
+        if (dangerousMethods.any { method.contains(it, ignoreCase = true) }) {
+            Log.w(TAG, "Dangerous network method: $method")
+            return true
+        }
+
+        // Check for PII in payload
+        val classification = dataClassifier.classify(payload)
+        if (classification.containsPII) {
+            Log.w(TAG, "PII detected in outgoing payload: ${classification.detectedTypes}")
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Get explanation of why a network action is dangerous
+     */
+    fun getNetworkDangerReason(method: String, payload: String): String? {
+        if (!isNetworkActionDangerous(method, payload)) return null
+
+        val classification = dataClassifier.classify(payload)
+        return if (classification.containsPII) {
+            "Payload contains sensitive data: ${classification.detectedTypes.joinToString()}"
+        } else {
+            "Method '$method' modifies remote state"
+        }
     }
 }

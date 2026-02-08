@@ -34,6 +34,16 @@ class ToolRouter(private val context: Context) {
         modules[module.moduleId] = module
         Log.i(TAG, "Registered module: ${module.moduleId} with ${module.operations.size} operations")
     }
+
+    /**
+     * Unregister a tool module by ID
+     */
+    fun unregister(moduleId: String) {
+        val removed = modules.remove(moduleId)
+        if (removed != null) {
+            Log.i(TAG, "Unregistered module: $moduleId")
+        }
+    }
     
     /**
      * Get all registered modules

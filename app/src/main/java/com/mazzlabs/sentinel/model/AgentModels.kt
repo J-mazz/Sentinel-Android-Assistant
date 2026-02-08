@@ -15,7 +15,14 @@ enum class ActionType {
     @SerializedName("HOME") HOME,
     @SerializedName("BACK") BACK,
     @SerializedName("WAIT") WAIT,
-    @SerializedName("NONE") NONE
+    @SerializedName("NONE") NONE,
+
+    // Dev workflow actions (Phase 3)
+    @SerializedName("REMOTE_EXEC") REMOTE_EXEC,
+    @SerializedName("REMOTE_READ") REMOTE_READ,
+    @SerializedName("REMOTE_WRITE") REMOTE_WRITE,
+    @SerializedName("START_DEV_PROJECT") START_DEV_PROJECT,
+    @SerializedName("SEND_TO_REMOTE") SEND_TO_REMOTE
 }
 
 /**

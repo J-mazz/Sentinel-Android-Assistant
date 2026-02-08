@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.mazzlabs.sentinel.SentinelApplication
+import com.mazzlabs.sentinel.capture.ScreenShareManager
 import com.mazzlabs.sentinel.graph.AgentIntent
 import com.mazzlabs.sentinel.graph.AgentNode
 import com.mazzlabs.sentinel.graph.AgentState
@@ -32,6 +34,8 @@ class SelectionProcessorNode(private val context: Context) : AgentNode {
             AgentIntent.SAVE_SELECTED -> saveSelected(state)
             AgentIntent.SHARE_SELECTED -> shareSelected(state, selectedText)
             AgentIntent.EXTRACT_DATA_FROM_SELECTION -> extractData(state, selectedText)
+            AgentIntent.SEND_SELECTION_TO_REMOTE -> sendToRemote(state, selectedText)
+            AgentIntent.ANALYZE_IMAGE_REGION -> analyzeImageRegion(state, selectedText)
             else -> state
         }
     }
@@ -117,6 +121,88 @@ class SelectionProcessorNode(private val context: Context) : AgentNode {
                 isComplete = true
             )
         }
+    }
+
+    private suspend fun sendToRemote(state: AgentState, text: String): AgentState {
+        val app = context.applicationContext as? SentinelApplication
+        val gatewayClient = app?.gatewayClient
+        if (gatewayClient == null || !gatewayClient.isConnected()) {
+            return state.copy(
+                response = "Gateway not connected. Cannot send selection to remote agent.",
+                isComplete = true
+            )
+        }
+
+        val screenShareManager = ScreenShareManager(gatewayClient)
+        val regionInfo = state.extractedEntities["region_info"] ?: ""
+        val prompt = if (text.isNotBlank()) {
+            "The user selected this text from their phone screen: \"$text\". $regionInfo\nPlease analyze and respond."
+        } else {
+            "The user selected a region on their phone screen. $regionInfo\nPlease analyze the image."
+        }
+
+        val result = try {
+            gatewayClient.sendMessage(
+                sessionKey = com.mazzlabs.sentinel.gateway.GatewayConfig.SessionKeys.ARCHITECT,
+                message = prompt
+            )
+        } catch (e: Exception) {
+            return state.copy(
+                response = "Failed to send to remote agent: ${e.message}",
+                isComplete = true
+            )
+        }
+
+        return state.copy(
+            response = result.text ?: "Remote agent returned no response.",
+            isComplete = true
+        )
+    }
+
+    private suspend fun analyzeImageRegion(state: AgentState, text: String): AgentState {
+        val app = context.applicationContext as? SentinelApplication
+        val gatewayClient = app?.gatewayClient
+        if (gatewayClient == null || !gatewayClient.isConnected()) {
+            return state.copy(
+                response = "Gateway not connected. Cannot analyze image region remotely.",
+                isComplete = true
+            )
+        }
+
+        val base64Image = state.extractedEntities["base64_image"] ?: ""
+        val ocrText = text.ifBlank { state.extractedEntities["ocr_text"] ?: "" }
+
+        val prompt = buildString {
+            appendLine("Analyze this image region from the user's phone screen.")
+            if (ocrText.isNotBlank()) {
+                appendLine()
+                appendLine("OCR text extracted: \"$ocrText\"")
+            }
+            if (base64Image.isNotBlank()) {
+                appendLine()
+                appendLine("Image (base64 JPEG):")
+                appendLine("```")
+                appendLine(base64Image)
+                appendLine("```")
+            }
+        }
+
+        val result = try {
+            gatewayClient.sendMessage(
+                sessionKey = com.mazzlabs.sentinel.gateway.GatewayConfig.SessionKeys.ARCHITECT,
+                message = prompt
+            )
+        } catch (e: Exception) {
+            return state.copy(
+                response = "Failed to analyze image region: ${e.message}",
+                isComplete = true
+            )
+        }
+
+        return state.copy(
+            response = result.text ?: "Remote agent returned no response.",
+            isComplete = true
+        )
     }
 
     private fun extractData(state: AgentState, text: String): AgentState {

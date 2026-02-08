@@ -5,6 +5,8 @@ import javax.xml.parsers.DocumentBuilderFactory
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kover)
 }
 
@@ -109,6 +111,7 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        compose = true
     }
 
     packaging {
@@ -127,7 +130,22 @@ dependencies {
     implementation(libs.lifecycle.service)
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.mlkit.text.recognition)
-    
+
+    // Gateway + Network
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.security.crypto)
+
+    // Jetpack Compose
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.activity.compose)
+    implementation(libs.navigation.compose)
+    implementation(libs.datastore.preferences)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

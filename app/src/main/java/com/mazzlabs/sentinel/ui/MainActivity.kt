@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.databinding.ActivityMainBinding
 import com.mazzlabs.sentinel.service.AgentAccessibilityService
+import com.mazzlabs.sentinel.ui.settings.SettingsActivity
 import java.io.File
 
 /**
@@ -106,6 +107,11 @@ class MainActivity : AppCompatActivity() {
         // Test inference
         binding.btnTestInference.setOnClickListener {
             testInference()
+        }
+
+        // Settings button (gateway, privacy, dev mode)
+        binding.btnSettings?.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
 
         // Model path configuration

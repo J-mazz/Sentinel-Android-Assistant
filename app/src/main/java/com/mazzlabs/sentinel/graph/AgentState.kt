@@ -3,6 +3,9 @@ package com.mazzlabs.sentinel.graph
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.model.UIElement
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
+import com.mazzlabs.sentinel.graph.state.DevProjectState
+import com.mazzlabs.sentinel.graph.workflow.WorkflowType
+import com.mazzlabs.sentinel.graph.workflow.RemoteAgentRole
 
 /**
  * AgentState - Immutable state object passed through the execution graph
@@ -39,6 +42,11 @@ data class AgentState(
     val isComplete: Boolean = false,
     val error: String? = null,
     
+    // Dev workflow state (Phase 3)
+    val devProject: DevProjectState? = null,
+    val workflowType: WorkflowType = WorkflowType.ASSISTANT,
+    val remoteAgentRole: RemoteAgentRole? = null,
+
     // Metadata
     val history: List<String> = emptyList(),
     val iteration: Int = 0,
@@ -145,5 +153,11 @@ enum class AgentIntent {
     COPY_SELECTED,
     SAVE_SELECTED,
     SHARE_SELECTED,
-    EXTRACT_DATA_FROM_SELECTION
+    EXTRACT_DATA_FROM_SELECTION,
+
+    // Remote/dev workflow intents (Phase 3/5)
+    SEND_SELECTION_TO_REMOTE,
+    ANALYZE_IMAGE_REGION,
+    START_DEV_PROJECT,
+    CONTINUE_DEV_PROJECT
 }

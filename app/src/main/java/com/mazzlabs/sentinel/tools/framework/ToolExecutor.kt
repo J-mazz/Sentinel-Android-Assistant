@@ -3,7 +3,9 @@ package com.mazzlabs.sentinel.tools.framework
 import android.content.Context
 import android.util.Log
 import com.mazzlabs.sentinel.SentinelApplication
+import com.mazzlabs.sentinel.gateway.OpenClawGatewayClient
 import com.mazzlabs.sentinel.tools.modules.*
+import com.mazzlabs.sentinel.tools.modules.dev.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -36,6 +38,35 @@ class ToolExecutor(private val context: Context) {
         router.register(TerminalModule())
         
         Log.i(TAG, "ToolExecutor initialized with ${router.getModules().size} modules")
+    }
+
+    private var devToolsRegistered = false
+
+    /**
+     * Register dev workflow tools that require a gateway connection.
+     * Safe to call multiple times — will skip if already registered.
+     */
+    fun registerDevTools(gatewayClient: OpenClawGatewayClient) {
+        if (devToolsRegistered) return
+        router.register(RemoteFilesystemModule(gatewayClient))
+        router.register(RemoteTerminalModule(gatewayClient))
+        router.register(ProjectManagerModule())
+        router.register(CodeReviewModule(gatewayClient))
+        devToolsRegistered = true
+        Log.i(TAG, "Dev tools registered (${router.getModules().size} total modules)")
+    }
+
+    /**
+     * Unregister dev workflow tools (e.g. when gateway disconnects).
+     */
+    fun unregisterDevTools() {
+        if (!devToolsRegistered) return
+        router.unregister("remote_fs")
+        router.unregister("remote_terminal")
+        router.unregister("project_manager")
+        router.unregister("code_review")
+        devToolsRegistered = false
+        Log.i(TAG, "Dev tools unregistered (${router.getModules().size} total modules)")
     }
     
     /**

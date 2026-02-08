@@ -127,6 +127,13 @@ class SelectionOverlayManager(private val context: Context) {
     }
 
     fun isShowing(): Boolean = isShowing
+
+    /**
+     * Set the selection mode for the overlay view.
+     */
+    fun setSelectionMode(mode: SelectionOverlayView.SelectionMode) {
+        overlayView?.setSelectionMode(mode)
+    }
 }
 
 /**
@@ -167,9 +174,11 @@ class SelectionOverlayView(
     private var currentY = 0f
     private var isDrawing = false
     private var selectionMode = SelectionMode.RECTANGLE
+    private val freeformPath = Path()
+    private val freeformBoundsRect = RectF()
 
     enum class SelectionMode {
-        RECTANGLE, CIRCLE
+        RECTANGLE, CIRCLE, FREEFORM
     }
 
     init {
@@ -179,6 +188,12 @@ class SelectionOverlayView(
 
     fun setOnSelectionListener(listener: OnSelectionListener) {
         this.listener = listener
+    }
+
+    fun setSelectionMode(mode: SelectionMode) {
+        selectionMode = mode
+        freeformPath.reset()
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -199,6 +214,7 @@ class SelectionOverlayView(
                 SelectionMode.RECTANGLE -> {
                     canvas.drawRect(rect, fillPaint)
                     canvas.drawRect(rect, paint)
+                    drawHandles(canvas, rect)
                 }
                 SelectionMode.CIRCLE -> {
                     val centerX = (rect.left + rect.right) / 2f
@@ -206,10 +222,13 @@ class SelectionOverlayView(
                     val radius = min(rect.width(), rect.height()) / 2f
                     canvas.drawCircle(centerX, centerY, radius, fillPaint)
                     canvas.drawCircle(centerX, centerY, radius, paint)
+                    drawHandles(canvas, rect)
+                }
+                SelectionMode.FREEFORM -> {
+                    canvas.drawPath(freeformPath, fillPaint)
+                    canvas.drawPath(freeformPath, paint)
                 }
             }
-
-            drawHandles(canvas, rect)
         }
     }
 
@@ -248,6 +267,10 @@ class SelectionOverlayView(
                 currentX = event.x
                 currentY = event.y
                 isDrawing = true
+                if (selectionMode == SelectionMode.FREEFORM) {
+                    freeformPath.reset()
+                    freeformPath.moveTo(event.x, event.y)
+                }
                 invalidate()
                 return true
             }
@@ -255,6 +278,9 @@ class SelectionOverlayView(
                 if (isDrawing) {
                     currentX = event.x
                     currentY = event.y
+                    if (selectionMode == SelectionMode.FREEFORM) {
+                        freeformPath.lineTo(event.x, event.y)
+                    }
                     invalidate()
                 }
                 return true
@@ -262,7 +288,14 @@ class SelectionOverlayView(
             MotionEvent.ACTION_UP -> {
                 if (isDrawing) {
                     isDrawing = false
-                    val rect = getSelectionRect()
+
+                    val rect = if (selectionMode == SelectionMode.FREEFORM) {
+                        freeformPath.close()
+                        freeformPath.computeBounds(freeformBoundsRect, true)
+                        freeformBoundsRect
+                    } else {
+                        getSelectionRect()
+                    }
 
                     if (rect.width() > 50 && rect.height() > 50) {
                         listener?.onSelected(
@@ -281,6 +314,7 @@ class SelectionOverlayView(
             }
             MotionEvent.ACTION_CANCEL -> {
                 isDrawing = false
+                freeformPath.reset()
                 listener?.onCanceled()
                 return true
             }

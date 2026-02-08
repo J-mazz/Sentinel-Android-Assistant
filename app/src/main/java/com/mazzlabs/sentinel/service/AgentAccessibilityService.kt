@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.capture.ScreenCaptureManager
+import com.mazzlabs.sentinel.capture.ScreenShareManager
 import com.mazzlabs.sentinel.core.AgentController
 import com.mazzlabs.sentinel.graph.AgentState
 import com.mazzlabs.sentinel.graph.EnhancedAgentOrchestrator
@@ -20,6 +21,7 @@ import com.mazzlabs.sentinel.input.VoiceInputManager
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.overlay.OverlayManager
 import com.mazzlabs.sentinel.overlay.SelectionOverlayManager
+import com.mazzlabs.sentinel.overlay.SelectionOverlayView
 import com.mazzlabs.sentinel.security.ActionFirewall
 import com.mazzlabs.sentinel.security.ActionRiskClassifier
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
@@ -142,7 +144,13 @@ class AgentAccessibilityService : AccessibilityService(),
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        
+
+        // Start gateway service if configured
+        val app = application as? SentinelApplication
+        if (app?.gatewayAuthManager?.isConfigured() == true) {
+            GatewayService.start(this)
+        }
+
         // Configure accessibility service
         serviceInfo = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
@@ -326,9 +334,20 @@ class AgentAccessibilityService : AccessibilityService(),
     }
 
     /**
-     * Enter interactive selection mode
+     * Enter interactive selection mode (rectangle by default)
      */
     private fun enterSelectionMode() {
+        enterSelectionModeWith(SelectionOverlayView.SelectionMode.RECTANGLE)
+    }
+
+    /**
+     * Enter freeform selection mode (circle-to-search style)
+     */
+    fun enterFreeformSelectionMode() {
+        enterSelectionModeWith(SelectionOverlayView.SelectionMode.FREEFORM)
+    }
+
+    private fun enterSelectionModeWith(mode: SelectionOverlayView.SelectionMode) {
         if (isSelectionMode) return
 
         screenCaptureManager.takeScreenshot { bitmap ->
@@ -336,9 +355,54 @@ class AgentAccessibilityService : AccessibilityService(),
                 isSelectionMode = true
                 overlayManager.hide()
                 selectionOverlayManager.show(bitmap)
+                selectionOverlayManager.setSelectionMode(mode)
                 performHapticFeedback()
             } else {
                 Log.e(TAG, "Failed to capture screenshot")
+                broadcastError("Screenshot failed")
+            }
+        }
+    }
+
+    /**
+     * Share the current screen to the remote agent via gateway.
+     */
+    fun shareScreenToRemote() {
+        val gatewayClient = SentinelApplication.getInstance().gatewayClient
+        if (gatewayClient == null || !gatewayClient.isConnected()) {
+            broadcastError("Gateway not connected")
+            return
+        }
+
+        screenCaptureManager.takeScreenshot { bitmap ->
+            if (bitmap != null) {
+                serviceScope.launch {
+                    try {
+                        val screenContext = withContext(Dispatchers.Main) {
+                            rootInActiveWindow?.let { root ->
+                                elementRegistry.rebuild(root)
+                                elementRegistry.toPromptString()
+                            } ?: "[No screen content]"
+                        }
+
+                        val screenShareManager = ScreenShareManager(gatewayClient)
+                        val response = screenShareManager.sendScreen(bitmap, screenContext)
+
+                        withContext(Dispatchers.Main) {
+                            if (response != null) {
+                                broadcastSuccess(response)
+                            } else {
+                                broadcastError("No response from remote agent")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error sharing screen", e)
+                        broadcastError("Screen share failed: ${e.message}")
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            } else {
                 broadcastError("Screenshot failed")
             }
         }
@@ -509,12 +573,17 @@ class AgentAccessibilityService : AccessibilityService(),
 
     private fun showSelectionActions(region: Rect, screenshot: Bitmap) {
         serviceScope.launch(Dispatchers.Main) {
-            val actions = mapOf(
-                "Search" to AgentIntent.SEARCH_SELECTED,
-                "Share" to AgentIntent.SHARE_SELECTED,
-                "Save" to AgentIntent.SAVE_SELECTED,
-                "Copy" to AgentIntent.COPY_SELECTED
-            )
+            val gatewayConnected = SentinelApplication.getInstance().gatewayClient?.isConnected() == true
+            val actions = buildMap {
+                put("Search", AgentIntent.SEARCH_SELECTED)
+                put("Share", AgentIntent.SHARE_SELECTED)
+                put("Save", AgentIntent.SAVE_SELECTED)
+                put("Copy", AgentIntent.COPY_SELECTED)
+                if (gatewayConnected) {
+                    put("Send to Agent", AgentIntent.SEND_SELECTION_TO_REMOTE)
+                    put("Analyze Image", AgentIntent.ANALYZE_IMAGE_REGION)
+                }
+            }
 
             val builder = android.app.AlertDialog.Builder(
                 this@AgentAccessibilityService,
@@ -540,14 +609,23 @@ class AgentAccessibilityService : AccessibilityService(),
                 val ocr = performOCROnRegion(screenshot)
                 val selectedText = ocr.text.ifBlank { "[image region: ${region.width()}x${region.height()}]" }
 
+                val entities = mutableMapOf(
+                    "selected_text" to selectedText,
+                    "language_hint" to ocr.languageHint,
+                    "ocr_confidence" to ocr.confidence.toString()
+                )
+
+                // For remote analysis intents, include base64-encoded image
+                if (intent == AgentIntent.ANALYZE_IMAGE_REGION || intent == AgentIntent.SEND_SELECTION_TO_REMOTE) {
+                    val base64 = screenCaptureManager.compressToBase64Jpeg(screenshot, 75)
+                    entities["base64_image"] = base64
+                    entities["region_info"] = "Region: (${region.left},${region.top})-(${region.right},${region.bottom})"
+                }
+
                 val state = AgentState(
                     sessionId = "main",
                     intent = intent,
-                    extractedEntities = mapOf(
-                        "selected_text" to selectedText,
-                        "language_hint" to ocr.languageHint,
-                        "ocr_confidence" to ocr.confidence.toString()
-                    )
+                    extractedEntities = entities
                 )
 
                 val processed = selectionProcessorNode.process(state)
@@ -774,7 +852,10 @@ class AgentAccessibilityService : AccessibilityService(),
         overlayManager.hide()
         voiceInputManager.release()
         ttsManager.release()
-        
+
+        // Stop gateway service
+        GatewayService.stop(this)
+
         instance = null
         serviceScope.cancel()
         Log.i(TAG, "AgentAccessibilityService destroyed")
