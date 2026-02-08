@@ -29,11 +29,11 @@ State flows through the system without mutation, enabling rollback and auditing.
 Unknown or dangerous operations default to rejection or confirmation.
 
 ### 5. Privacy First
-Zero network access. All processing on-device. No telemetry.
+Traffic stays on LAN/VPN. User controls both endpoints. Thin client architecture (~50MB vs ~3GB before).
 
 ## Three-Layer Architecture
 
-Sentinel implements a strict three-boundary design inspired by security-critical systems:
+Sentinel implements a strict three-boundary design inspired by security-critical systems, now with a **pure API architecture**:
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -48,30 +48,33 @@ Sentinel implements a strict three-boundary design inspired by security-critical
 │  └─────────────────────────────────────────────────────────┘  │
 └────────────────────────────┬──────────────────────────────────┘
                              │ Screen Context + User Query
+                             │ (via WebSocket)
 ┌────────────────────────────▼──────────────────────────────────┐
 │                     LAYER 2: THE CORTEX                        │
-│                         (C++23)                                │
+│                    (OpenClaw Gateway)                          │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │              llama.cpp + Jamba-3B                       │  │
-│  │  1. Input Sanitization (injection detection)            │  │
-│  │  2. Context Wrapping (chat template)                    │  │
-│  │  3. Grammar-Constrained Inference (GBNF)                │  │
-│  │  4. JSON Validation                                     │  │
-│  │  • Isolated from Kotlin logic                           │  │
-│  │  • Deterministic output structure                       │  │
+│  │            Remote Inference Server                      │  │
+│  │  • Runs on LAN/VPN (user-controlled)                    │  │
+│  │  • Model selection (Claude, GPT, local llama, etc.)     │  │
+│  │  • Context wrapping (chat template)                     │  │
+│  │  • Structured output generation (JSON)                  │  │
+│  │  • Server-side validation                               │  │
+│  │  • Isolated from device                                 │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └────────────────────────────┬──────────────────────────────────┘
                              │ Validated JSON Action/Tool Call
+                             │ (via WebSocket)
 ┌────────────────────────────▼──────────────────────────────────┐
 │                    LAYER 3: THE ACTUATOR                       │
 │                         (Kotlin)                               │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │          ActionDispatcher + Security Layer              │  │
-│  │  1. Action Firewall (heuristic danger detection)        │  │
-│  │  2. Risk Classifier (semantic analysis)                 │  │
-│  │  3. Physical Confirmation (Volume Up button)            │  │
-│  │  4. Element Validation (staleness check)                │  │
-│  │  5. Accessibility API Execution                         │  │
+│  │  1. Network Firewall (TLS, host allowlist)             │  │
+│  │  2. Action Firewall (heuristic danger detection)        │  │
+│  │  3. Risk Classifier (semantic analysis)                 │  │
+│  │  4. Physical Confirmation (Volume Up button)            │  │
+│  │  5. Element Validation (staleness check)                │  │
+│  │  6. Accessibility API Execution                         │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -92,43 +95,47 @@ Sentinel implements a strict three-boundary design inspired by security-critical
 - No decision-making logic
 - Pure observation and data collection
 - Forwards raw data to orchestration layer
+- Connects to gateway via secure WebSocket
 
 **File**: `/app/src/main/java/com/mazzlabs/sentinel/service/AgentAccessibilityService.kt` (722 lines)
 
-### Layer 2: The Cortex
+### Layer 2: The Cortex (OpenClaw Gateway)
 
 **Responsibility**: Reason about intent and generate actions
 
 **Components**:
-- Native inference engine (llama.cpp)
-- Jamba-Reasoning-3B model (Q4_K_M quantization)
-- GBNF grammar enforcement
-- Input sanitizer
-- Chat template formatter
+- OpenClaw Gateway server (runs on LAN/VPN)
+- Configurable model backend (Claude, GPT, local llama.cpp, etc.)
+- WebSocket API for real-time communication
+- Structured output generation
+- Server-side prompt engineering
 
 **Security Boundary**:
-- Input sanitization: Strip control tokens, limit length
-- Injection detection: Block malicious prompts
-- Grammar constraint: Only valid JSON can be produced
-- Thread-safe: Mutex-protected model access
+- Traffic encrypted via TLS
+- Host allowlist enforced on device
+- PII filtering via NetworkFirewall
+- Token-based authentication
+- User controls both device and gateway
 
-**Files**:
-- `/app/src/main/cpp/native-lib.cpp` (352 lines)
-- `/app/src/main/cpp/native_inference.cpp`
-- `/app/src/main/cpp/sentinel.hpp`
+**Deployment**:
+- User's own hardware (desktop, NAS, cloud VM)
+- Traffic stays on local network or VPN
+- No third-party services involved
 
 ### Layer 3: The Actuator
 
 **Responsibility**: Execute validated actions safely
 
 **Components**:
+- `NetworkFirewall`: TLS validation, host allowlist, PII filtering
 - `ActionDispatcher`: Translates JSON to accessibility actions
 - `ActionFirewall`: Heuristic danger detection
 - `ActionRiskClassifier`: LLM-based semantic risk assessment
 - Physical confirmation system
 
 **Security Boundary**:
-- Firewall blocks known dangerous patterns
+- Network firewall validates all connections
+- Action firewall blocks known dangerous patterns
 - Risk classifier reduces false positives
 - User must physically confirm dangerous actions
 - Staleness detection prevents acting on old UI state
@@ -142,7 +149,7 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 ### UI Layer
 
 **Components**:
-- `MainActivity`: Main activity for model loading and status
+- `MainActivity`: Main activity for gateway configuration and status
 - `OverlayManager`: Floating overlay UI
 - `SelectionOverlayManager`: Screen selection UI
 - `VoiceInputManager`: Voice input UI
@@ -150,7 +157,7 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 **Responsibilities**:
 - User interaction
 - Permission requests
-- Model loading status
+- Gateway connection status
 - Overlay rendering
 
 **Threading**: Main thread (UI thread)
@@ -159,13 +166,14 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 
 **Components**:
 - `AgentAccessibilityService`: Core accessibility service
-- `InferenceService`: Foreground service for sustained inference
+- `InferenceService`: Foreground service for WebSocket connection
 - `ScreenCaptureManager`: Screenshot capture service
 
 **Responsibilities**:
 - Long-running operations
 - System service integration
 - Accessibility event handling
+- WebSocket connection management
 - Foreground notification
 
 **Threading**: Main thread + service scope coroutines
@@ -196,7 +204,7 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 
 **Components**:
 - `AgentController`: Main orchestration controller
-- `NativeBridge`: JNI bridge to native code
+- `GatewayBridge`: WebSocket bridge to OpenClaw Gateway
 - `SystemPromptBuilder`: Dynamic system prompt generation
 - `JsonExtractor`: JSON parsing and validation
 - `ToolExecutor`: Tool invocation coordinator
@@ -204,16 +212,16 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 
 **Responsibilities**:
 - Request routing (tool vs UI action)
-- Native inference invocation
+- Gateway communication
 - JSON parsing and validation
 - Tool execution
 - Response formatting
 
-**Threading**: Dispatchers.IO for inference
+**Threading**: Dispatchers.IO for network requests
 
 **Files**:
 - `/app/src/main/java/com/mazzlabs/sentinel/core/AgentController.kt` (187 lines)
-- `/app/src/main/java/com/mazzlabs/sentinel/core/NativeBridge.kt` (76 lines)
+- `/app/src/main/java/com/mazzlabs/sentinel/core/GatewayBridge.kt`
 - `/app/src/main/java/com/mazzlabs/sentinel/core/SystemPromptBuilder.kt`
 
 ### Tool Layer
@@ -244,10 +252,12 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 ### Security Layer
 
 **Components**:
+- `NetworkFirewall`: TLS validation, host allowlist, PII filtering
 - `ActionFirewall`: Keyword-based danger detection
 - `ActionRiskClassifier`: LLM-based semantic analysis
 
 **Responsibilities**:
+- Network security
 - Action validation
 - Danger scoring
 - Confirmation requirements
@@ -255,31 +265,9 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 **Threading**: Main thread (synchronous checks)
 
 **Files**:
+- `/app/src/main/java/com/mazzlabs/sentinel/security/NetworkFirewall.kt`
 - `/app/src/main/java/com/mazzlabs/sentinel/security/ActionFirewall.kt` (178 lines)
 - `/app/src/main/java/com/mazzlabs/sentinel/security/ActionRiskClassifier.kt` (102 lines)
-
-### Native Layer
-
-**Components**:
-- llama.cpp inference engine
-- GGML (GPU Metal for Mobile)
-- GBNF grammar parser
-- Input sanitizer
-- Chat template engine
-
-**Responsibilities**:
-- Model loading and management
-- Token encoding/decoding
-- Inference execution
-- Grammar constraint enforcement
-
-**Threading**: Native threads (mutex-protected)
-
-**Files**:
-- `/app/src/main/cpp/native-lib.cpp` (352 lines)
-- `/app/src/main/cpp/native_inference.cpp`
-- `/app/src/main/cpp/sentinel.hpp`
-- `/libs/llama.cpp/` (submodule)
 
 ## Data Flow
 
@@ -306,8 +294,8 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 │    • EnhancedAgentOrchestrator.process(query, screenContext)    │
 │    • Create initial AgentState                                  │
 │    • Execute graph nodes in sequence:                           │
-│      - IntentParserNode: Classify intent (via LLM)              │
-│      - EntityExtractorNode: Extract parameters (via LLM)        │
+│      - IntentParserNode: Classify intent (via Gateway)          │
+│      - EntityExtractorNode: Extract parameters (via Gateway)    │
 │      - ContextAnalyzerNode: Analyze screen context              │
 │      - Conditional routing:                                     │
 │        * Tool intent → ToolSelector → ParamExtractor → ToolExec │
@@ -352,23 +340,23 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 │ 1. Initiation                                                   │
 │    • User long-presses overlay button                           │
 │    • AgentAccessibilityService.enterSelectionMode()             │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
 │ 2. Screen Capture                                               │
 │    • ScreenCaptureManager.takeScreenshot()                      │
 │    • MediaProjection API                                        │
 │    • Bitmap at full screen resolution                           │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
 │ 3. Selection UI                                                 │
 │    • SelectionOverlayManager.showSelection(bitmap)              │
 │    • User drags to select rectangular region                    │
 │    • Visual feedback with bounding box                          │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
 │ 4. OCR Processing                                               │
 │    • Extract selected region from bitmap                        │
 │    • Downscale to max 1280px (performance optimization)         │
@@ -376,18 +364,18 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 │    • Aggregate text blocks                                      │
 │    • Calculate confidence score                                 │
 │    • Detect language hint (Latin, Cyrillic, Arabic, CJK)        │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
 │ 5. Confidence Check                                             │
 │    • If confidence ≥ 0.6:                                       │
 │      → Continue to agent processing                             │
 │    • If confidence < 0.6:                                       │
 │      → Show selection actions dialog                            │
 │      → User provides explicit query                             │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────────────┐
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────────┐
 │ 6. Agent Processing                                             │
 │    • SelectionProcessorNode.process(state)                      │
 │    • Update AgentState with:                                    │
@@ -396,46 +384,44 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 │      - languageHint                                             │
 │      - confidence score                                         │
 │    • Continue through agent graph                               │
-│    • LLM reasons about extracted text + screen context          │
+│    • Gateway LLM reasons about extracted text + screen context  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Native Inference Flow
+### Gateway Inference Flow
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ Kotlin: NativeBridge.infer(userQuery, screenContext)           │
+│ Kotlin: GatewayBridge.infer(userQuery, screenContext)          │
 └──────────────────────────┬─────────────────────────────────────┘
-                           │ JNI Call
+                           │ WebSocket Send
 ┌──────────────────────────▼─────────────────────────────────────┐
-│ C++: Java_com_...NativeBridge_infer(...)                        │
+│ Network: TLS-encrypted WebSocket connection                    │
 │                                                                 │
-│  1. Lock model mutex (thread safety)                            │
-│  2. Check model ready                                           │
-│  3. sentinel::contains_injection(userQuery)                     │
-│     → Return error if injection detected                        │
-│  4. sentinel::sanitize(userQuery, 2048)                         │
-│     sentinel::sanitize(screenContext, 32000)                    │
-│     → Strip control tokens, limit length, XML escape            │
-│  5. SystemPromptBuilder.build(availableActions, tools)          │
-│     → Dynamic system prompt with current capabilities           │
-│  6. apply_chat_template(systemPrompt, userQuery)                │
-│     → Uses model's Jinja template                               │
-│     → Formats: <|system|>...<|user|>...<|assistant|>            │
-│  7. llama_tokenize(ctx, prompt)                                 │
-│     → Convert text to token IDs                                 │
-│  8. llama_decode(ctx, batch)                                    │
-│     → Run transformer inference                                 │
-│     → Grammar constrains output to valid JSON                   │
-│     → Sample tokens greedily until EOS                          │
-│  9. llama_detokenize(ctx, tokens)                               │
-│     → Convert token IDs back to text                            │
-│ 10. Validate JSON structure                                     │
-│ 11. Return std::expected<std::string, std::string>              │
+│  • NetworkFirewall validates host in allowlist                  │
+│  • PII filtering scans outbound data                            │
+│  • TLS certificate validation                                   │
+│  • Token-based authentication                                   │
 └──────────────────────────┬─────────────────────────────────────┘
-                           │ JNI Return
+                           │
 ┌──────────────────────────▼─────────────────────────────────────┐
-│ Kotlin: Parse jstring result                                    │
+│ Gateway: OpenClaw Gateway Server (LAN/VPN)                      │
+│                                                                 │
+│  1. Receive request via WebSocket                               │
+│  2. Authenticate token                                          │
+│  3. SystemPromptBuilder.build(availableActions, tools)          │
+│     → Dynamic system prompt with current capabilities           │
+│  4. Format prompt for configured model                          │
+│     → Uses model's chat template                                │
+│     → Formats: system/user/assistant structure                  │
+│  5. Invoke model (Claude, GPT, local llama.cpp, etc.)           │
+│     → Structured output (JSON) enforced by model                │
+│  6. Validate JSON structure                                     │
+│  7. Return response via WebSocket                               │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ WebSocket Receive
+┌──────────────────────────▼─────────────────────────────────────┐
+│ Kotlin: Parse JSON result                                       │
 │  • JsonExtractor.extractAction(json)                            │
 │  • Or: JsonExtractor.extractToolCall(json)                      │
 │  • Or: Parse error message                                      │
@@ -448,12 +434,13 @@ Sentinel employs several design patterns for maintainability and extensibility:
 
 ### 1. Three-Tier Architecture Pattern
 
-**Separates**: Observer (data), Cortex (logic), Actuator (execution)
+**Separates**: Observer (data), Cortex (logic via API), Actuator (execution)
 
 **Benefits**:
 - Clear security boundaries
 - Testable in isolation
 - Independent evolution
+- Model flexibility (swap backends without app changes)
 
 ### 2. DAG Workflow Pattern (LangGraph-inspired)
 
@@ -468,7 +455,7 @@ Sentinel employs several design patterns for maintainability and extensibility:
 ```kotlin
 val graph = AgentGraph(
     nodes = mapOf(
-        "intent_parser" to IntentParserNode(llm),
+        "intent_parser" to IntentParserNode(gateway),
         "tool_selector" to ToolSelectorNode(toolRegistry),
         "tool_executor" to ToolExecutorNode(toolRegistry, context)
     ),
@@ -544,14 +531,14 @@ data class AgentAction(
 )
 ```
 
-### 6. Bridge Pattern (JNI)
+### 6. Bridge Pattern (Gateway API)
 
-**Implementation**: `NativeBridge` connects Kotlin to C++
+**Implementation**: `GatewayBridge` connects Kotlin to remote inference
 
 **Benefits**:
-- Language interop
-- Performance optimization
-- Legacy library integration (llama.cpp)
+- Protocol abstraction
+- Network isolation
+- Flexible backend selection
 
 ### 7. Registry Pattern
 
@@ -581,7 +568,7 @@ data class AgentAction(
 
 ### 10. Result/Expected Pattern
 
-**Implementation**: `AgentResult` sealed class, C++ `std::expected`
+**Implementation**: `AgentResult` sealed class
 
 **Benefits**:
 - Explicit error handling
@@ -615,7 +602,7 @@ Sentinel uses Kotlin coroutines with structured concurrency:
 - Business logic
 
 **Dispatchers.IO**:
-- Inference calls (blocking native code)
+- Network requests to gateway
 - Tool execution (database queries, content provider access)
 - File I/O
 
@@ -649,11 +636,6 @@ class AgentAccessibilityService {
 - `AtomicReference` for compound state (recent fix)
 - Coroutine mutex for exclusive access
 - Immutable data classes
-
-**C++**:
-- `std::shared_mutex` for model access
-- `std::lock_guard` for RAII locking
-- Thread-local caches
 
 ### Race Condition Prevention
 
@@ -708,32 +690,17 @@ fun releaseScreenshot() {
 }
 ```
 
-### Native Memory Management
-
-**Model Lifecycle**:
-```cpp
-// Initialization
-g_llama_model = llama_load_model_from_file(modelPath, model_params);
-g_llama_ctx = llama_new_context_with_model(g_llama_model, ctx_params);
-
-// Cleanup
-void Java_...NativeBridge_releaseModel(...) {
-    std::lock_guard lock(g_model_mutex);
-    if (g_llama_ctx) llama_free(g_llama_ctx);
-    if (g_llama_model) llama_free_model(g_llama_model);
+**WebSocket Connection Management**:
+```kotlin
+fun disconnect() {
+    webSocket?.close(1000, "Client disconnecting")
+    webSocket = null
 }
-```
-
-**String Allocation**:
-```cpp
-// Return string to Java
-jstring jresult = env->NewStringUTF(result.c_str());
-// JVM takes ownership, will GC
 ```
 
 ### Memory Limits
 
-**Context Window**: 32K tokens (~24KB text)
+**Context Window**: Configurable on gateway (typically 32K-128K tokens)
 **Max Query**: 2KB (sanitization limit)
 **Max Screen Context**: 32KB (sanitization limit)
 **Element Limit**: 60 interactive elements (toPromptString)
@@ -743,16 +710,11 @@ jstring jresult = env->NewStringUTF(result.c_str());
 
 ### Optimization Techniques
 
-**ARM64 CPU Optimizations**:
-- NEON SIMD instructions
-- DOT product extensions
-- FP16 acceleration
-- CMake flags: `-march=armv8.4-a+dotprod+fp16`
-
-**Inference Optimization**:
-- GPU layer offloading (99 layers)
-- Context caching (reuse KV cache)
-- Greedy decoding (no beam search overhead)
+**Network Optimization**:
+- WebSocket connection reuse
+- Message batching for rapid queries
+- Response streaming for long outputs
+- Connection pooling
 
 **UI Performance**:
 - Async accessibility tree traversal
@@ -762,10 +724,24 @@ jstring jresult = env->NewStringUTF(result.c_str());
 
 ### Resource Constraints
 
-**Inference Latency**: 2-10 seconds typical
-**Memory**: 2-3GB for model + KV cache
-**Battery**: Foreground service, not optimized for continuous use
-**CPU**: Single-threaded inference (llama.cpp limitation)
+**Inference Latency**: Network RTT + server inference (typically 0.5-5 seconds)
+**Memory**: ~50MB app size (down from ~3GB with on-device model)
+**Battery**: Foreground service with WebSocket keepalive
+**Network**: ~1-10KB per query (compressed JSON)
+
+### Performance Comparison
+
+**Old (On-Device)**:
+- App size: ~3GB (model included)
+- Inference: 2-10 seconds (CPU-bound)
+- Memory: 2-3GB (model + KV cache)
+- Battery: High (continuous CPU usage)
+
+**New (API-Based)**:
+- App size: ~50MB (no model)
+- Inference: 0.5-5 seconds (network + server)
+- Memory: ~100MB (app only)
+- Battery: Low (WebSocket keepalive only)
 
 ## Extensibility Points
 
@@ -777,14 +753,14 @@ Implement `ToolModule` interface and register in `ToolRegistry`
 ### Adding Graph Nodes
 Implement `AgentNode` interface and add to graph definition
 
-### Custom Grammars
-Create `.gbnf` file and reference in inference call
-
-### Native Function Extension
-Add JNI method in `native-lib.cpp` and Kotlin declaration in `NativeBridge`
+### Gateway Backend Selection
+Configure OpenClaw to use different models (Claude, GPT, local llama.cpp)
 
 ### Custom Actions
 Add to `ActionType` enum and implement in `ActionDispatcher`
+
+### Network Security Policies
+Customize `NetworkFirewall` rules (host allowlist, PII patterns)
 
 See [Tool Development Guide](TOOLS.md) for detailed instructions.
 

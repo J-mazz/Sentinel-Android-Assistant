@@ -1,10 +1,10 @@
 package com.mazzlabs.sentinel.inference
 
 /**
- * InferenceProvider - Interface for local/remote inference
+ * InferenceProvider - Interface for inference
  *
  * Abstracts the inference source so the agent graph doesn't need to know
- * whether it's talking to on-device llama.cpp or the OpenClaw gateway.
+ * implementation details of the OpenClaw gateway connection.
  */
 interface InferenceProvider {
 
@@ -31,7 +31,6 @@ data class InferenceOptions(
     val temperature: Float = 0.7f,
     val topP: Float = 0.9f,
     val maxTokens: Int = 2048,
-    val grammarPath: String? = null,
     val model: String? = null,
     val sessionKey: String? = null,
     val systemPrompt: String? = null,

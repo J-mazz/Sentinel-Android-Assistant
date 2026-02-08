@@ -2,7 +2,7 @@ package com.mazzlabs.sentinel.security
 
 import android.util.Log
 import com.mazzlabs.sentinel.SentinelApplication
-import com.mazzlabs.sentinel.core.GrammarManager
+import com.mazzlabs.sentinel.inference.InferenceOptions
 import com.mazzlabs.sentinel.core.JsonExtractor
 import com.mazzlabs.sentinel.model.AgentAction
 import kotlinx.coroutines.Dispatchers
@@ -10,14 +10,13 @@ import kotlinx.coroutines.withContext
 
 /**
  * ActionRiskClassifier - Lightweight semantic classifier for action risk.
- * Uses the existing on-device model with a constrained grammar to reduce
- * false positives from keyword-only firewall checks.
+ * Uses the OpenClaw gateway to analyze actions for potential security risks,
+ * reducing false positives from keyword-only firewall checks.
  */
 class ActionRiskClassifier {
 
     companion object {
         private const val TAG = "ActionRiskClassifier"
-        private const val GRAMMAR_ASSET = "risk.gbnf"
     }
 
     data class RiskAssessment(
@@ -27,44 +26,46 @@ class ActionRiskClassifier {
         val raw: String? = null
     )
 
-    private val nativeBridge = SentinelApplication.getInstance().nativeBridge
-    private val grammarPath: String by lazy { GrammarManager.getGrammarPath(GRAMMAR_ASSET) }
+    private val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
     suspend fun assess(
         action: AgentAction,
         screenContext: String,
         packageName: String
     ): RiskAssessment? = withContext(Dispatchers.IO) {
-        if (!nativeBridge.isModelReady()) {
-            Log.w(TAG, "Model not ready; skipping semantic risk classification")
+        if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+            Log.w(TAG, "Gateway not connected; skipping semantic risk classification")
             return@withContext null
         }
 
-        val systemPrompt = buildSystemPrompt()
-        val userPrompt = buildUserPrompt(action, screenContext, packageName)
+        val prompt = buildPrompt(action, screenContext, packageName)
 
         val response = try {
-            nativeBridge.inferWithGrammar(userPrompt, systemPrompt, grammarPath)
+            inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.3f, maxTokens = 256)
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Risk classification failed", e)
             return@withContext null
         }
 
-        parseAssessment(response)
+        if (!response.success) {
+            Log.w(TAG, "Risk classification inference failed: ${response.error}")
+            return@withContext null
+        }
+
+        parseAssessment(response.text)
     }
 
-    private fun buildSystemPrompt(): String {
-        return """
-            You are a security classifier for an Android agent.
-            Determine if executing the action is dangerous in context.
-            Return JSON with fields: dangerous (true|false), confidence (0-1), reason (optional).
-            Respond ONLY with JSON.
-        """.trimIndent()
-    }
-
-    private fun buildUserPrompt(action: AgentAction, screenContext: String, packageName: String): String {
+    private fun buildPrompt(action: AgentAction, screenContext: String, packageName: String): String {
         val context = screenContext.take(2000)
         return buildString {
+            appendLine("You are a security classifier for an Android agent.")
+            appendLine("Determine if executing this action is dangerous in the given context.")
+            appendLine("Return JSON with fields: dangerous (true|false), confidence (0-1), reason (optional).")
+            appendLine("Respond ONLY with JSON.")
+            appendLine()
             appendLine("Package: $packageName")
             appendLine("Action JSON:")
             appendLine(action.toJson())

@@ -14,7 +14,7 @@ import kotlin.io.path.createTempDirectory
 
 /**
  * Tests for AgentController
- * Note: AgentController has dependencies on SentinelApplication and NativeBridge
+ * Note: AgentController has dependencies on SentinelApplication and the gateway
  * which makes full integration testing difficult. These tests focus on the
  * data classes and formatResult functionality.
  */

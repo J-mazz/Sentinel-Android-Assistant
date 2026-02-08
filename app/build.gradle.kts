@@ -32,7 +32,6 @@ kover {
 android {
     namespace = "com.mazzlabs.sentinel"
     compileSdk = 34
-    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.mazzlabs.sentinel"
@@ -42,29 +41,6 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // NDK Configuration for ARM64-v8a (GrapheneOS/Pixel devices)
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
-
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf(
-                    "-std=c++23",
-                    "-O3",
-                    "-fvisibility=hidden",
-                    "-fvisibility-inlines-hidden",
-                    "-DNDEBUG"
-                )
-                arguments += listOf(
-                    "-DANDROID_STL=c++_static",
-                    "-DANDROID_PLATFORM=android-34",
-                    "-DGGML_VULKAN=OFF",
-                    "-DGGML_CPU_ARM_ARCH=armv8.4-a+dotprod+fp16"
-                )
-            }
-        }
     }
 
     buildTypes {
@@ -90,13 +66,6 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "4.1.2"
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -112,12 +81,6 @@ android {
         viewBinding = true
         buildConfig = true
         compose = true
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
     }
 }
 

@@ -6,7 +6,7 @@ Complete installation and configuration guide for Sentinel Android Assistant.
 
 - [Prerequisites](#prerequisites)
 - [Environment Setup](#environment-setup)
-- [Model Setup](#model-setup)
+- [OpenClaw Gateway Setup](#openclaw-gateway-setup)
 - [Building from Source](#building-from-source)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -20,20 +20,24 @@ Complete installation and configuration guide for Sentinel Android Assistant.
 **Minimum**:
 - ARM64 Android device (arm64-v8a)
 - Android 14 (API 34) or higher
-- 4GB RAM
-- 8GB free storage
+- 2GB RAM
+- 500MB free storage
 
 **Recommended**:
-- ARM64 with NEON and DOT product support
 - Android 14 (API 34) or higher
-- 6GB+ RAM
-- 16GB free storage
-- Support for ARMv8.4-a extensions
+- 4GB+ RAM
+- 1GB free storage
 
 **Tested Devices**:
 - Google Pixel 7/8 series
 - GrapheneOS devices
 - Samsung Galaxy S23+
+
+**Gateway Server** (separate machine):
+- Desktop, NAS, or cloud VM
+- Linux, macOS, or Windows
+- 4GB+ RAM for local models
+- Network access to device (LAN or VPN)
 
 ### Software Requirements
 
@@ -41,15 +45,12 @@ Complete installation and configuration guide for Sentinel Android Assistant.
 - Linux, macOS, or Windows with WSL2
 - Android Studio Koala (2024.1.1) or newer
 - Android SDK 34
-- Android NDK r29 or newer (r27+ works)
-- CMake 4.1.2+
 - Git
-- Python 3.8+ (for model conversion if needed)
 
 **Device Requirements**:
 - AccessibilityService permission
 - Special Use Foreground Service permission
-- Sufficient storage for model (~3GB)
+- Network connectivity to gateway
 
 ## Environment Setup
 
@@ -74,8 +75,6 @@ Open Android Studio → SDK Manager:
 
 **SDK Tools**:
 - ☑ Android SDK Build-Tools 34.0.0+
-- ☑ NDK (Side by side) version 29.0.14206865
-- ☑ CMake version 4.1.2+
 - ☑ Android Emulator (optional, for testing)
 
 ### 3. Configure Environment Variables
@@ -83,7 +82,6 @@ Open Android Studio → SDK Manager:
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
 export ANDROID_HOME=$HOME/Android/Sdk
-export NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
 ```
@@ -100,103 +98,116 @@ git clone https://github.com/your-org/Sentinel-Android-Assistant.git
 cd Sentinel-Android-Assistant
 ```
 
-### 5. Initialize Submodules
+## OpenClaw Gateway Setup
 
-The project uses llama.cpp as a submodule:
+Sentinel requires an OpenClaw Gateway server for inference. The gateway runs on your own hardware and routes requests to your chosen model backend.
 
-```bash
-git submodule update --init --recursive
-```
+### Option 1: Install OpenClaw (Recommended)
 
-Or use the setup script:
+**On Linux/macOS**:
 
 ```bash
-./scripts/setup_llama.sh
+# Install OpenClaw
+curl -fsSL https://openclaw.com/install.sh | sh
+
+# Or download binary
+wget https://openclaw.com/releases/latest/openclaw-linux-x64
+chmod +x openclaw-linux-x64
+sudo mv openclaw-linux-x64 /usr/local/bin/openclaw
+
+# Verify installation
+openclaw --version
 ```
 
-This script:
-1. Initializes llama.cpp submodule
-2. Checks out a stable commit
-3. Verifies required files exist
+**On Windows**:
+```powershell
+# Download installer from https://openclaw.com/releases/latest
+# Or use Windows binary
+```
 
-## Model Setup
-
-Sentinel requires a GGUF format model. We recommend Jamba-Reasoning-3B.
-
-### Option 1: Download Pre-Quantized Model (Recommended)
+### Option 2: Docker (Alternative)
 
 ```bash
-# Download from Hugging Face
-wget https://huggingface.co/ai21labs/Jamba-Reasoning-3B-GGUF/resolve/main/jamba-reasoning-3b-Q4_K_M.gguf
+# Pull OpenClaw Gateway image
+docker pull openclaw/gateway:latest
 
-# Or using huggingface-cli
-pip install huggingface-hub
-huggingface-cli download ai21labs/Jamba-Reasoning-3B-GGUF \
-    jamba-reasoning-3b-Q4_K_M.gguf --local-dir ./models/
+# Run gateway
+docker run -d \
+  --name openclaw-gateway \
+  -p 8080:8080 \
+  -v ~/.openclaw:/root/.openclaw \
+  openclaw/gateway:latest
 ```
 
-### Option 2: Convert and Quantize Custom Model
-
-If you have a different model:
+### Configure OpenClaw Gateway
 
 ```bash
-# Install llama.cpp Python requirements
-cd libs/llama.cpp
-pip install -r requirements.txt
+# Initialize configuration
+openclaw gateway init
 
-# Convert HuggingFace model to GGUF
-python convert_hf_to_gguf.py /path/to/model --outfile model-f16.gguf
+# Configure model backend
+openclaw gateway config set model.provider anthropic  # or openai, local, etc.
+openclaw gateway config set model.name claude-sonnet-4
 
-# Quantize to Q4_K_M (recommended)
-./llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M
+# Set API key (if using cloud provider)
+openclaw gateway config set api.anthropic.key sk-ant-...
+
+# Or configure local model
+openclaw gateway config set model.provider local
+openclaw gateway config set model.path /path/to/model.gguf
+
+# Configure authentication
+openclaw gateway config set auth.token your-secure-token-here
+
+# Enable TLS (recommended)
+openclaw gateway config set tls.enabled true
+openclaw gateway config set tls.cert /path/to/cert.pem
+openclaw gateway config set tls.key /path/to/key.pem
 ```
 
-**Supported Quantizations**:
-- Q4_K_M: 4-bit, medium quality, ~2GB (recommended)
-- Q5_K_M: 5-bit, high quality, ~2.5GB
-- Q8_0: 8-bit, very high quality, ~3.5GB
-- Q2_K: 2-bit, experimental, ~1.5GB
-
-### Push Model to Device
+### Start OpenClaw Gateway
 
 ```bash
-# Enable USB debugging on your device
-# Settings → About → Tap "Build number" 7 times
-# Settings → Developer options → USB debugging
+# Start gateway service
+openclaw gateway start
 
-# Connect device via USB
-adb devices  # Verify device is connected
+# Verify gateway is running
+openclaw gateway status
 
-# Push model to device
-adb push jamba-reasoning-3b-Q4_K_M.gguf /data/local/tmp/sentinel_model.gguf
+# View logs
+openclaw gateway logs
 
-# Verify model was transferred
-adb shell ls -lh /data/local/tmp/sentinel_model.gguf
+# Gateway should be accessible at:
+# - Local: ws://localhost:8080 (or wss:// if TLS enabled)
+# - Network: ws://YOUR_IP:8080
 ```
 
-**Model Path in Code**:
+### Network Configuration
 
-Update `MainActivity.kt` if using a different path:
-```kotlin
-private val MODEL_PATH = "/data/local/tmp/sentinel_model.gguf"
-```
+**For Local Network Access**:
+1. Note your gateway server's IP address:
+   ```bash
+   # Linux/macOS
+   ifconfig | grep "inet "
+   
+   # Or
+   hostname -I
+   ```
 
-Or use app's files directory (requires copying via app):
-```kotlin
-private val MODEL_PATH = "${context.filesDir}/sentinel_model.gguf"
-```
+2. Ensure firewall allows connections on port 8080:
+   ```bash
+   # Linux (ufw)
+   sudo ufw allow 8080
+   
+   # Linux (firewalld)
+   sudo firewall-cmd --add-port=8080/tcp --permanent
+   sudo firewall-cmd --reload
+   ```
 
-### Grammar Files
-
-Grammar files are included in `app/src/main/assets/*.gbnf`. They are automatically bundled in the APK.
-
-**Available Grammars**:
-- `agent.gbnf`: Generic JSON output
-- `intent.gbnf`: Intent classification
-- `entities.gbnf`: Entity extraction
-- `risk.gbnf`: Risk assessment
-- `plan.gbnf`: Multi-step planning
-- `tool_params.gbnf`: Tool parameter extraction
+**For VPN Access**:
+- Configure VPN on both gateway server and Android device
+- Use VPN IP address for gateway URL
+- Traffic stays encrypted end-to-end
 
 ## Building from Source
 
@@ -248,23 +259,18 @@ Build release APK:
 open build/reports/kover/html/index.html
 ```
 
-### Native Library Build
-
-Native libraries are built automatically during APK assembly via CMake.
-
-To rebuild native code only:
-```bash
-./gradlew externalNativeBuildDebug
-```
-
-Build artifacts:
-- `app/build/intermediates/cmake/debug/obj/arm64-v8a/libsentinel.so`
-
 ## Installation
 
 ### Install via ADB
 
 ```bash
+# Enable USB debugging on your device
+# Settings → About → Tap "Build number" 7 times
+# Settings → Developer options → USB debugging
+
+# Connect device via USB
+adb devices  # Verify device is connected
+
 # Install debug APK
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
@@ -289,7 +295,31 @@ Not yet available. Planned for future release.
 
 ## Configuration
 
-### 1. Grant Permissions
+### 1. Configure Gateway Connection
+
+In MainActivity:
+1. Tap "Settings"
+2. Enter Gateway URL:
+   - Local: `ws://192.168.1.100:8080` (replace with your IP)
+   - TLS: `wss://192.168.1.100:8080`
+3. Enter authentication token (from gateway config)
+4. Tap "Save"
+5. Tap "Test Connection" to verify
+
+**Configuration File** (alternative):
+
+Create `app/src/main/assets/gateway_config.json`:
+```json
+{
+  "gateway_url": "wss://192.168.1.100:8080",
+  "auth_token": "your-secure-token-here",
+  "tls_verify": true,
+  "allowed_hosts": ["192.168.1.100", "gateway.local"],
+  "timeout_ms": 30000
+}
+```
+
+### 2. Grant Permissions
 
 On first launch, the app will request:
 
@@ -298,6 +328,8 @@ On first launch, the app will request:
   - Settings → Accessibility → Sentinel → Enable
 - ☑ **Notification Access**: For foreground service status
   - Automatically granted when accessibility is enabled
+- ☑ **Network Access**: For gateway communication
+  - Automatically granted
 
 **Optional** (per-tool):
 - Calendar: Read/Write calendar
@@ -305,32 +337,16 @@ On first launch, the app will request:
 - SMS: Send/Receive messages
 - Alarms: Set alarms
 
-### 2. Load Model
+### 3. Test Gateway Connection
 
 In MainActivity:
-1. Tap "Load Model"
-2. Wait for model to initialize (10-30 seconds)
-3. Status will show "Model Loaded Successfully"
-
-**Model Info**:
-- Path: `/data/local/tmp/sentinel_model.gguf`
-- Vocab size: ~100K tokens
-- Context length: 32K tokens
-- Load time: 10-30 seconds (device-dependent)
-
-### 3. Configure Inference Parameters (Optional)
-
-Default parameters are tuned for best performance:
-
-```kotlin
-nativeBridge.setInferenceParams(
-    temperature = 0.7f,  // Creativity (0.0-1.0)
-    topP = 0.9f,         // Nucleus sampling
-    maxTokens = 512      // Max output length
-)
-```
-
-To modify, edit in `MainActivity.kt` after model load.
+1. Tap "Test Connection"
+2. Wait for connection status
+3. Status should show "Connected to Gateway"
+4. Connection info shows:
+   - Gateway version
+   - Model backend
+   - Latency
 
 ### 4. Enable Accessibility Service
 
@@ -368,102 +384,88 @@ adb shell pm list packages | grep sentinel
 # Check accessibility service is running
 adb shell dumpsys accessibility | grep Sentinel
 
-# Check model file exists
-adb shell ls -lh /data/local/tmp/sentinel_model.gguf
+# Check gateway connection
+adb logcat -s GatewayBridge | grep "Connected"
 
 # View logs
-adb logcat -s AgentAccessibilityService NativeBridge
+adb logcat -s AgentAccessibilityService GatewayBridge
 ```
 
 ### Functionality Test
 
-**Test 1: Voice Command**
+**Test 1: Gateway Connection**
+1. Open app
+2. Verify "Connected" status in UI
+3. Check gateway logs: `openclaw gateway logs`
+
+**Test 2: Voice Command**
 1. Tap overlay button
 2. Say "What time is it?"
 3. Verify response appears
 
-**Test 2: Screen Action**
+**Test 3: Screen Action**
 1. Say "Scroll down"
 2. Verify screen scrolls
 
-**Test 3: Tool Call**
+**Test 4: Tool Call**
 1. Say "What's on my calendar today?"
 2. Grant calendar permission if prompted
 3. Verify calendar events are listed
 
-### Verify Native Library
+### Network Verification
 
 ```bash
-# Check native library is included in APK
-unzip -l app/build/outputs/apk/debug/app-debug.apk | grep libsentinel.so
+# Monitor gateway traffic (on gateway server)
+openclaw gateway logs --follow
 
-# Should show:
-# lib/arm64-v8a/libsentinel.so
+# You should see:
+# - WebSocket connection established
+# - Request: {userQuery: "...", screenContext: "..."}
+# - Response: {action: "...", reasoning: "..."}
 
-# Check library info
-adb shell
-cd /data/app/com.mazzlabs.sentinel-*/lib/arm64/
-file libsentinel.so
+# Check network connectivity from device
+adb shell ping YOUR_GATEWAY_IP
 ```
 
 ## Troubleshooting Setup
 
 ### Build Issues
 
-**Problem**: "NDK not found"
+**Problem**: "INTERNET permission denied"
 ```
-Solution:
-- Open Android Studio → SDK Manager
-- Install NDK (Side by side)
-- Sync Gradle
-```
-
-**Problem**: "CMake not found"
-```
-Solution:
-- Android Studio → SDK Manager → SDK Tools
-- Install CMake
-- Sync Gradle
+Solution: This is expected. INTERNET permission is now required for gateway communication.
+Check AndroidManifest.xml includes:
+<uses-permission android:name="android.permission.INTERNET" />
 ```
 
-**Problem**: "llama.cpp files not found"
-```
-Solution:
-./scripts/setup_llama.sh
-git submodule update --init --recursive
-```
+### Gateway Connection Issues
 
-**Problem**: "C++23 features not supported"
-```
-Solution:
-- Ensure NDK r27+ is installed
-- Check app/build.gradle.kts has: cppFlags += "-std=c++23"
-```
-
-### Model Issues
-
-**Problem**: "Model not loading"
+**Problem**: "Cannot connect to gateway"
 ```
 Check:
-1. Model file exists: adb shell ls /data/local/tmp/*.gguf
-2. File size is correct: ~2-3GB for Q4_K_M
-3. Logs: adb logcat -s NativeBridge
+1. Gateway is running: openclaw gateway status
+2. Network connectivity: ping gateway IP from device
+3. Firewall allows port 8080
+4. Correct gateway URL in app config
+5. Valid authentication token
+6. Gateway logs: openclaw gateway logs
 ```
 
-**Problem**: "Model format not supported"
+**Problem**: "TLS certificate verification failed"
 ```
 Solution:
-- Ensure model is in GGUF format (not GGML or PyTorch)
-- Re-download or re-convert model
-- Use llama.cpp version matching submodule commit
+- Use self-signed cert: Set tls_verify: false in config (not recommended)
+- Or use proper TLS cert from Let's Encrypt
+- Or use ws:// instead of wss:// on trusted network
 ```
 
-**Problem**: "Out of memory when loading model"
+**Problem**: "Connection timeout"
 ```
-Solution:
-- Use smaller quantization (Q4_K_M → Q2_K)
-- Reduce context window in native_inference.cpp
-- Close other apps
+Check:
+1. Network latency: ping gateway server
+2. Gateway timeout settings
+3. Device firewall settings
+4. VPN configuration (if using VPN)
 ```
 
 ### Permission Issues
@@ -497,10 +499,10 @@ adb logcat -s AndroidRuntime
 **Problem**: "Inference takes too long"
 ```
 Optimize:
+- Check network latency to gateway
+- Use faster model on gateway (e.g., Claude Haiku vs Opus)
 - Reduce maxTokens parameter
-- Use smaller model
-- Increase GPU layers (if supported)
-- Check device isn't thermal throttling
+- Check gateway server resources
 ```
 
 **Problem**: "Actions not executing"
@@ -517,14 +519,17 @@ Check:
 **GrapheneOS**:
 - May require enabling "Allow sensor access" in app settings
 - Verify "Special Use" foreground service is allowed
+- Network permission required for gateway
 
 **Samsung Devices**:
 - Disable battery optimization for Sentinel
 - Add to "Never sleeping apps" list
+- Allow background network usage
 
 **Xiaomi/MIUI**:
 - Grant "Autostart" permission
 - Disable battery restrictions
+- Allow background data
 
 ## Next Steps
 
@@ -539,6 +544,8 @@ After successful setup:
 
 **Support**: If you encounter issues not covered here, please open an issue on GitHub with:
 - Device model and Android version
+- Gateway configuration
 - Build logs (if build failure)
 - Logcat output (if runtime failure)
+- Gateway logs (if connection failure)
 - Steps to reproduce

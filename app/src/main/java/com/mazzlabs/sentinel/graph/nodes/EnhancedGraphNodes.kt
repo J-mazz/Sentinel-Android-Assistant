@@ -4,7 +4,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mazzlabs.sentinel.SentinelApplication
-import com.mazzlabs.sentinel.core.GrammarManager
+import com.mazzlabs.sentinel.inference.InferenceOptions
 import com.mazzlabs.sentinel.core.JsonExtractor
 import com.mazzlabs.sentinel.graph.AgentIntent
 import com.mazzlabs.sentinel.graph.AgentNode
@@ -25,14 +25,33 @@ class IntentParserNode : AgentNode {
 
     override suspend fun process(state: AgentState): AgentState {
         val prompt = buildIntentPrompt(state)
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
         return try {
-            val grammar = GrammarManager.getGrammarPath("intent.gbnf")
-            val response = SentinelApplication.getInstance()
-                .nativeBridge
-                .inferWithGrammar(prompt, "", grammar)
+            if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                return state.copy(
+                    intent = AgentIntent.UNKNOWN,
+                    confidence = 0f,
+                    error = "Gateway not connected",
+                    currentNode = "intent_parser"
+                )
+            }
 
-            val parsed = parseIntentResponse(response)
+            val result = inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.7f, maxTokens = 512)
+            )
+
+            if (!result.success) {
+                return state.copy(
+                    intent = AgentIntent.UNKNOWN,
+                    confidence = 0f,
+                    error = "Inference failed: ${result.error}",
+                    currentNode = "intent_parser"
+                )
+            }
+
+            val parsed = parseIntentResponse(result.text)
             state.copy(
                 intent = parsed.intent,
                 confidence = parsed.confidence,
@@ -130,14 +149,23 @@ class EntityExtractorNode : AgentNode {
         }
 
         val prompt = buildEntityPrompt(state)
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
         return try {
-            val grammar = GrammarManager.getGrammarPath("entities.gbnf")
-            val response = SentinelApplication.getInstance()
-                .nativeBridge
-                .inferWithGrammar(prompt, "", grammar)
+            if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                return state.copy(error = "Gateway not connected")
+            }
 
-            val entities = parseEntities(response)
+            val result = inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.7f, maxTokens = 512)
+            )
+
+            if (!result.success) {
+                return state.copy(error = "Inference failed: ${result.error}")
+            }
+
+            val entities = parseEntities(result.text)
             state.copy(
                 extractedEntities = entities,
                 currentNode = "entity_extractor"
@@ -286,13 +314,23 @@ Respond with JSON:
 }
 """.trimIndent()
 
-        return try {
-            val grammar = GrammarManager.getGrammarPath("plan.gbnf")
-            val response = SentinelApplication.getInstance()
-                .nativeBridge
-                .inferWithGrammar(prompt, "", grammar)
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
-            val plan = parsePlanResponse(response, state.userQuery)
+        return try {
+            if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                return state.copy(error = "Gateway not connected")
+            }
+
+            val result = inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.7f, maxTokens = 1024)
+            )
+
+            if (!result.success) {
+                return state.copy(error = "Inference failed: ${result.error}")
+            }
+
+            val plan = parsePlanResponse(result.text, state.userQuery)
             val validatedPlan = plan?.let { validatePlan(it) }
             state.copy(plan = validatedPlan, currentNode = "plan_generator")
         } catch (e: Exception) {

@@ -28,44 +28,12 @@ echo ""
 echo "Installing APK..."
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
-# Copy all grammar files to device
-echo ""
-echo "Copying grammar files..."
-if [ -d "app/src/main/assets" ]; then
-    for f in app/src/main/assets/*.gbnf; do
-        if [ -f "$f" ]; then
-            filename=$(basename -- "$f")
-            echo "  Pushing $filename..."
-            adb push "$f" "/data/local/tmp/$filename" > /dev/null
-        fi
-    done
-    echo "Grammar files copied successfully"
-else
-    echo "Warning: app/src/main/assets directory not found"
-fi
-
-# Copy model if it exists locally
-MODEL_LOCAL="jamba-reasoning-3b-Q4_K_M.gguf"
-MODEL_DEST="/data/local/tmp/jamba-reasoning-3b-Q4_K_M.gguf"
-
-if [ -f "$MODEL_LOCAL" ]; then
-    echo ""
-    echo "Copying model file (this may take a while)..."
-    adb push "$MODEL_LOCAL" "$MODEL_DEST"
-elif adb shell "[ -f $MODEL_DEST ]" 2>/dev/null; then
-    echo "Model file already on device at $MODEL_DEST"
-else
-    echo ""
-    echo "WARNING: Model file not found locally or on device"
-    echo "Please copy your GGUF model to project root or device"
-fi
-
 echo ""
 echo "=== Deployment Complete ==="
 echo ""
 echo "Next steps:"
 echo "1. Open Sentinel Agent on your device"
-echo "2. Enable the Accessibility Service in Settings"
-echo "3. Load the model in the app"
+echo "2. Configure your OpenClaw gateway in Settings"
+echo "3. Enable the Accessibility Service in Settings"
 echo "4. Test with a voice command or text query"
 echo ""

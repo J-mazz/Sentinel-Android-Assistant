@@ -3,104 +3,55 @@ package com.mazzlabs.sentinel.inference
 import android.util.Log
 
 /**
- * InferenceRouter - Policy-based routing between local and remote inference
+ * InferenceRouter - Routes all inference through the OpenClaw gateway
  *
- * Routes inference requests based on the configured policy:
- * - LOCAL_ONLY: Only use on-device inference (offline mode)
- * - REMOTE_ONLY: Only use gateway-based inference
- * - AUTO: Try remote first, fall back to local
+ * Simplified router that directs all inference requests to the remote gateway.
+ * Keeps the routing abstraction for future extensibility (e.g., model selection,
+ * load balancing) but removes the local inference path entirely.
  */
 class InferenceRouter(
-    private val localProvider: LocalInferenceProvider,
-    private val remoteProvider: RemoteInferenceProvider?
+    private val remoteProvider: RemoteInferenceProvider
 ) {
     companion object {
         private const val TAG = "InferenceRouter"
     }
 
     enum class RoutingPolicy {
-        LOCAL_ONLY,
-        REMOTE_ONLY,
+        /** Use remote gateway (default and only practical option) */
+        REMOTE,
+        /** Auto mode - currently just uses remote, kept for future extensibility */
         AUTO
     }
 
-    var policy: RoutingPolicy = if (remoteProvider != null) RoutingPolicy.AUTO else RoutingPolicy.LOCAL_ONLY
+    var policy: RoutingPolicy = RoutingPolicy.AUTO
         private set
 
     fun setPolicy(newPolicy: RoutingPolicy) {
-        if (newPolicy == RoutingPolicy.REMOTE_ONLY && remoteProvider == null) {
-            Log.w(TAG, "Cannot set REMOTE_ONLY without remote provider, using AUTO")
-            policy = RoutingPolicy.AUTO
-            return
-        }
         policy = newPolicy
         Log.i(TAG, "Routing policy set to: $newPolicy")
     }
 
     /**
-     * Route an inference request based on policy
+     * Route an inference request (always goes to remote)
      */
     suspend fun infer(prompt: String, options: InferenceOptions = InferenceOptions()): InferenceResult {
-        return when (policy) {
-            RoutingPolicy.LOCAL_ONLY -> inferLocal(prompt, options)
-            RoutingPolicy.REMOTE_ONLY -> inferRemote(prompt, options)
-            RoutingPolicy.AUTO -> inferAuto(prompt, options)
-        }
-    }
-
-    /**
-     * Check if any provider is available
-     */
-    suspend fun isAvailable(): Boolean {
-        return when (policy) {
-            RoutingPolicy.LOCAL_ONLY -> localProvider.isAvailable()
-            RoutingPolicy.REMOTE_ONLY -> remoteProvider?.isAvailable() ?: false
-            RoutingPolicy.AUTO -> localProvider.isAvailable() || remoteProvider?.isAvailable() == true
-        }
-    }
-
-    /**
-     * Get the currently active provider
-     */
-    suspend fun getActiveProvider(): InferenceProvider? {
-        return when (policy) {
-            RoutingPolicy.LOCAL_ONLY -> localProvider.takeIf { it.isAvailable() }
-            RoutingPolicy.REMOTE_ONLY -> remoteProvider?.takeIf { it.isAvailable() }
-            RoutingPolicy.AUTO -> {
-                if (remoteProvider?.isAvailable() == true) remoteProvider
-                else if (localProvider.isAvailable()) localProvider
-                else null
-            }
-        }
-    }
-
-    private suspend fun inferLocal(prompt: String, options: InferenceOptions): InferenceResult {
-        if (!localProvider.isAvailable()) {
-            return InferenceResult.error("local", "Local model not loaded")
-        }
-        return localProvider.infer(prompt, options)
-    }
-
-    private suspend fun inferRemote(prompt: String, options: InferenceOptions): InferenceResult {
-        if (remoteProvider == null || !remoteProvider.isAvailable()) {
+        if (!remoteProvider.isAvailable()) {
             return InferenceResult.error("remote", "Gateway not connected")
         }
         return remoteProvider.infer(prompt, options)
     }
 
-    private suspend fun inferAuto(prompt: String, options: InferenceOptions): InferenceResult {
-        // Try remote first if available (more capable models)
-        if (remoteProvider?.isAvailable() == true) {
-            val result = remoteProvider.infer(prompt, options)
-            if (result.success) return result
-            Log.w(TAG, "Remote inference failed, falling back to local: ${result.error}")
-        }
+    /**
+     * Check if the gateway is available
+     */
+    suspend fun isAvailable(): Boolean {
+        return remoteProvider.isAvailable()
+    }
 
-        // Fall back to local
-        if (localProvider.isAvailable()) {
-            return localProvider.infer(prompt, options)
-        }
-
-        return InferenceResult.error("router", "No inference provider available")
+    /**
+     * Get the currently active provider (always remote)
+     */
+    suspend fun getActiveProvider(): InferenceProvider? {
+        return remoteProvider.takeIf { it.isAvailable() }
     }
 }

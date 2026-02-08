@@ -6,7 +6,7 @@ import com.google.gson.annotations.SerializedName
 
 /**
  * Action types supported by the agent
- * Defined in GBNF grammar for strict enforcement
+ * Validated by JSON schema on the gateway
  */
 enum class ActionType {
     @SerializedName("CLICK") CLICK,
@@ -37,7 +37,7 @@ enum class ScrollDirection {
 
 /**
  * Agent Action - The output structure from inference
- * Strictly enforced by GBNF grammar at the native layer
+ * Validated by JSON schema on the gateway and parsed locally
  */
 data class AgentAction(
     @SerializedName("action")

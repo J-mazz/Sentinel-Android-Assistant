@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.core.JsonExtractor
+import com.mazzlabs.sentinel.inference.InferenceOptions
 import com.mazzlabs.sentinel.model.AgentAction
 import com.mazzlabs.sentinel.tools.framework.ToolExecutor
 import com.mazzlabs.sentinel.tools.framework.ToolResponse
@@ -20,6 +21,7 @@ import org.json.JSONObject
  * 2. UI actions (tap, scroll, type via accessibility)
  * 
  * This is the brain that decides what to do with user input.
+ * All reasoning happens via the OpenClaw gateway.
  */
 class AgentController(private val context: Context) {
     
@@ -28,7 +30,7 @@ class AgentController(private val context: Context) {
     }
     
     private val toolExecutor = Tools.getInstance(context)
-    private val nativeBridge = SentinelApplication.getInstance().nativeBridge
+    private val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
     
     /**
      * Result of processing a user request
@@ -52,29 +54,41 @@ class AgentController(private val context: Context) {
             try {
                 Log.d(TAG, "Processing query: $query")
                 
+                // Check if inference is available
+                if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                    return@withContext AgentResult.Error("Gateway not connected. Please configure and connect to OpenClaw gateway in settings.")
+                }
+                
                 // Build system prompt with tools
                 val systemPrompt = SystemPromptBuilder.build(context, includeTools = true)
                 
-                // Run inference with grammar first
-                var response = nativeBridge.infer(
-                    userQuery = buildUserPrompt(query, screenContext),
-                    screenContext = systemPrompt
-                )
-
-                // Check if grammar inference failed and retry without grammar
-                if (shouldRetryWithoutGrammar(response)) {
-                    Log.w(TAG, "Grammar inference failed, retrying without grammar constraint")
-                    response = nativeBridge.inferWithoutGrammar(
-                        userQuery = buildUserPrompt(query, screenContext),
-                        screenContext = systemPrompt
-                    )
-                    Log.d(TAG, "Fallback inference result: $response")
-                } else {
-                    Log.d(TAG, "LLM response: $response")
+                // Build user prompt with context
+                val userPrompt = buildUserPrompt(query, screenContext)
+                
+                // Combine system and user prompts
+                val fullPrompt = buildString {
+                    appendLine(systemPrompt)
+                    appendLine()
+                    appendLine(userPrompt)
                 }
                 
+                // Run inference via gateway
+                val result = inferenceRouter.infer(
+                    prompt = fullPrompt,
+                    options = InferenceOptions(
+                        temperature = 0.7f,
+                        maxTokens = 2048
+                    )
+                )
+                
+                if (!result.success) {
+                    return@withContext AgentResult.Error("Inference failed: ${result.error}")
+                }
+                
+                Log.d(TAG, "LLM response: ${result.text}")
+                
                 // Parse response
-                parseAndExecute(response)
+                parseAndExecute(result.text)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing query", e)
@@ -171,20 +185,6 @@ class AgentController(private val context: Context) {
             }
         }
         return map
-    }
-    
-    /**
-     * Check if inference response indicates grammar failure
-     */
-    private fun shouldRetryWithoutGrammar(response: String): Boolean {
-        val errorIndicators = listOf(
-            "Sampler error",
-            "Grammar",
-            "grammar constraint",
-            "empty grammar stack",
-            "inference error"
-        )
-        return errorIndicators.any { response.contains(it, ignoreCase = true) }
     }
 
     /**

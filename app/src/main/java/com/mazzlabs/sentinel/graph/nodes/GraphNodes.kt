@@ -4,7 +4,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mazzlabs.sentinel.SentinelApplication
-import com.mazzlabs.sentinel.core.GrammarManager
+import com.mazzlabs.sentinel.inference.InferenceOptions
 import com.mazzlabs.sentinel.graph.*
 import com.mazzlabs.sentinel.model.ActionType
 import com.mazzlabs.sentinel.model.AgentAction
@@ -15,7 +15,7 @@ import com.mazzlabs.sentinel.tools.framework.ToolResponse
 /**
  * IntentClassifierNode - Determines user intent from query
  *
- * Uses the LLM to classify intent into predefined categories.
+ * Uses the gateway LLM to classify intent into predefined categories.
  */
 class IntentClassifierNode(
     private val toolExecutor: ToolExecutor
@@ -29,16 +29,31 @@ class IntentClassifierNode(
         Log.d(TAG, "Classifying intent for: ${state.userQuery}")
 
         val prompt = buildClassificationPrompt(state)
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
         return try {
-            val grammar = GrammarManager.getGrammarPath("intent.gbnf")
-            val response = SentinelApplication.getInstance()
-                .nativeBridge
-                .inferWithGrammar(prompt, "", grammar)
+            if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                return state.copy(
+                    intent = AgentIntent.UNKNOWN,
+                    error = "Gateway not connected"
+                )
+            }
 
-            Log.d(TAG, "Classification response: $response")
+            val result = inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.7f, maxTokens = 512)
+            )
 
-            val (intent, entities) = parseClassificationResponse(response)
+            if (!result.success) {
+                return state.copy(
+                    intent = AgentIntent.UNKNOWN,
+                    error = "Inference failed: ${result.error}"
+                )
+            }
+
+            Log.d(TAG, "Classification response: ${result.text}")
+
+            val (intent, entities) = parseClassificationResponse(result.text)
 
             state.copy(
                 intent = intent,
@@ -174,14 +189,23 @@ class ParameterExtractorNode(
         // Otherwise, use LLM to extract parameters
         val schema = toolExecutor.getOperationSchema(toolCall) ?: "No schema available"
         val prompt = buildExtractionPrompt(state, toolCall, schema)
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
 
         return try {
-            val grammar = GrammarManager.getGrammarPath("tool_params.gbnf")
-            val response = SentinelApplication.getInstance()
-                .nativeBridge
-                .inferWithGrammar(prompt, "", grammar)
+            if (inferenceRouter == null || !inferenceRouter.isAvailable()) {
+                return state.copy(error = "Gateway not connected")
+            }
 
-            val params = parseParameters(response)
+            val result = inferenceRouter.infer(
+                prompt = prompt,
+                options = InferenceOptions(temperature = 0.7f, maxTokens = 512)
+            )
+
+            if (!result.success) {
+                return state.copy(error = "Inference failed: ${result.error}")
+            }
+
+            val params = parseParameters(result.text)
 
             state.copy(
                 toolInput = params,

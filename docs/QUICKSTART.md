@@ -1,46 +1,64 @@
 # Quick Start Guide
 
-Get Sentinel up and running in 5 minutes.
+Get Sentinel up and running in 10 minutes.
 
 ## Prerequisites
 
 - ARM64 Android device with Android 14+
 - USB cable
 - Computer with ADB installed
-- ~5GB free space on device
+- Separate machine for OpenClaw Gateway (desktop, NAS, or VM)
+- Network connectivity between device and gateway
 
 ## Step-by-Step
 
-### 1. Download Model
+### 1. Set Up OpenClaw Gateway
+
+**On your gateway server** (desktop, NAS, or VM):
 
 ```bash
-# Download Jamba-3B Q4_K_M (~2.8GB)
-wget https://huggingface.co/ai21labs/Jamba-Reasoning-3B-GGUF/resolve/main/jamba-reasoning-3b-Q4_K_M.gguf
+# Install OpenClaw
+curl -fsSL https://openclaw.com/install.sh | sh
+
+# Configure gateway
+openclaw gateway init
+openclaw gateway config set model.provider anthropic  # or openai, local, etc.
+openclaw gateway config set model.name claude-sonnet-4
+openclaw gateway config set api.anthropic.key sk-ant-...  # if using cloud provider
+
+# Set authentication token
+openclaw gateway config set auth.token $(openssl rand -hex 32)
+
+# Start gateway
+openclaw gateway start
+
+# Note your gateway IP address
+hostname -I  # or ifconfig
+# Example: 192.168.1.100
 ```
 
-### 2. Enable Developer Options
+**Verify gateway is running**:
+```bash
+openclaw gateway status
+# Should show: Running on ws://0.0.0.0:8080
+```
 
-On your device:
+### 2. Enable Developer Options on Device
+
+On your Android device:
 1. Settings → About phone
 2. Tap "Build number" 7 times
 3. Settings → Developer options
 4. Enable "USB debugging"
 
-### 3. Push Model to Device
+### 3. Install App
 
+**Option A: Pre-built APK**
 ```bash
 # Connect device via USB
 adb devices  # Verify device is connected
 
-# Push model (takes 2-3 minutes)
-adb push jamba-reasoning-3b-Q4_K_M.gguf /data/local/tmp/sentinel_model.gguf
-```
-
-### 4. Install App
-
-**Option A: Pre-built APK**
-```bash
-# If you have a pre-built APK
+# Install APK
 adb install -r sentinel-release.apk
 ```
 
@@ -48,27 +66,41 @@ adb install -r sentinel-release.apk
 ```bash
 git clone https://github.com/your-org/Sentinel-Android-Assistant.git
 cd Sentinel-Android-Assistant
-./scripts/setup_llama.sh
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### 4. Configure Gateway Connection
+
+On your device:
+
+1. Open Sentinel app
+2. Tap "Settings"
+3. Enter Gateway URL: `ws://192.168.1.100:8080` (replace with your IP)
+4. Enter Auth Token (from gateway config):
+   ```bash
+   # On gateway server, get token:
+   openclaw gateway config get auth.token
+   ```
+5. Tap "Save"
+6. Tap "Test Connection"
+7. Verify "Connected" status
 
 ### 5. Grant Permissions
 
 On your device:
 
-1. Open Sentinel app
-2. Tap "Load Model"
-3. Wait 10-30 seconds for model to load
-4. Go to Settings → Accessibility
-5. Find "Sentinel Agent"
-6. Toggle ON
-7. Confirm security warning
+1. Go to Settings → Accessibility
+2. Find "Sentinel Agent"
+3. Toggle ON
+4. Confirm security warning
+5. Return to Sentinel app
+6. Grant overlay permission if prompted
 
 ### 6. Try It Out!
 
 **Test 1: Simple Query**
-1. Tap the floating overlay button (appears after enabling accessibility)
+1. Tap the floating overlay button
 2. Say "What time is it?"
 3. See response appear
 
@@ -93,10 +125,16 @@ On your device:
 
 ## Common First-Time Issues
 
-### "Model not loading"
-- Check model exists: `adb shell ls /data/local/tmp/*.gguf`
-- Verify size: Should be ~2-3GB
-- See logs: `adb logcat -s NativeBridge`
+### "Cannot connect to gateway"
+- Check gateway is running: `openclaw gateway status`
+- Verify network connectivity: `ping 192.168.1.100` (from device)
+- Check firewall on gateway server: `sudo ufw allow 8080`
+- Verify correct URL in app settings
+
+### "Gateway connection timeout"
+- Check network latency between device and gateway
+- Verify gateway is responsive: `curl http://192.168.1.100:8080/health`
+- Check gateway logs: `openclaw gateway logs`
 
 ### "Accessibility service won't enable"
 - Ensure app is installed
@@ -104,28 +142,34 @@ On your device:
 - Restart device
 
 ### "No response to voice commands"
-- Verify model loaded successfully (green checkmark in app)
+- Verify gateway connection (green status in app)
 - Check accessibility service is ON
-- See logs: `adb logcat -s AgentAccessibilityService`
+- See logs: `adb logcat -s AgentAccessibilityService GatewayBridge`
+- Check gateway logs: `openclaw gateway logs --follow`
 
 ## Tips for Best Experience
 
 **Performance**:
-- Close other apps when using Sentinel
-- Use Q4_K_M quantization for best speed/quality balance
+- Use gateway on same LAN for lowest latency
+- Claude Haiku or GPT-4 Mini for fastest responses
 - Keep queries concise
+
+**Security**:
+- Use TLS for gateway connection: `wss://` instead of `ws://`
+- Keep auth token secure
+- Use VPN if accessing gateway remotely
+- Review [Security Model](SECURITY.md) for details
+
+**Privacy**:
+- Gateway stays on your network (LAN or VPN)
+- No third-party services involved
+- You control both device and gateway
+- Traffic never leaves your infrastructure
 
 **Battery**:
 - Disable accessibility service when not in use
 - Exit app when done
-
-**Privacy**:
-- Verify no network access: `adb shell dumpsys package com.mazzlabs.sentinel | grep INTERNET`
-- Should show nothing (no INTERNET permission)
-
-**Security**:
-- Review [Security Model](SECURITY.md) to understand protections
-- Physical confirmation (Volume Up) required for dangerous actions
+- Gateway connection uses minimal battery (WebSocket keepalive)
 
 ## Example Commands
 
@@ -149,6 +193,36 @@ On your device:
 - "Set an alarm for 7:30 AM tomorrow"
 - "Send a message to Mom saying 'Running late'"
 
+## Gateway Model Options
+
+You can configure different model backends on the gateway:
+
+**Cloud Models** (requires API key):
+```bash
+# Anthropic Claude
+openclaw gateway config set model.provider anthropic
+openclaw gateway config set model.name claude-sonnet-4
+
+# OpenAI GPT
+openclaw gateway config set model.provider openai
+openclaw gateway config set model.name gpt-4-turbo
+```
+
+**Local Models** (privacy-focused):
+```bash
+# Local llama.cpp
+openclaw gateway config set model.provider local
+openclaw gateway config set model.path /path/to/model.gguf
+openclaw gateway config set model.context_size 32768
+```
+
+**Performance Comparison**:
+- **Claude Opus**: Highest quality, slower (~2-5s)
+- **Claude Sonnet**: Balanced (~1-3s)
+- **Claude Haiku**: Fast, good quality (~0.5-1.5s)
+- **GPT-4 Turbo**: High quality (~1-3s)
+- **Local llama.cpp**: Privacy-first, speed varies by hardware
+
 ## Support
 
 **Documentation**:
@@ -166,4 +240,4 @@ On your device:
 
 ---
 
-**Welcome to Sentinel!** Enjoy your privacy-focused AI assistant.
+**Welcome to Sentinel!** Enjoy your privacy-focused AI assistant with the power of modern LLMs.

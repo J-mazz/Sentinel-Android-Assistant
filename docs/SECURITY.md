@@ -189,23 +189,30 @@ bool contains_injection(const std::string& input) {
 
 **Bypass Resistance**: Runs in native code, isolated from Kotlin layer
 
-### Layer 2: Output Constraint (GBNF Grammar)
+### Layer 2: Output Constraint (Server-Side)
 
-**File**: `/app/src/main/assets/agent.gbnf`
+**Location**: OpenClaw Gateway (server-side)
 
 **Purpose**: Guarantee structurally valid and safe outputs
 
-**Example Grammar**:
-```gbnf
-root ::= object
+**Implementation**:
+- Modern LLMs (Claude, GPT-4) support structured output natively
+- JSON schema validation enforced by model
+- Gateway validates output before returning to device
 
-object ::= "{" ws "\"action\"" ws ":" ws action ws "," ws
-           "\"reasoning\"" ws ":" ws string ws "}"
-
-action ::= "\"CLICK\"" | "\"SCROLL\"" | "\"TYPE\"" |
-           "\"WAIT\"" | "\"NONE\"" | "\"HOME\"" | "\"BACK\""
-
-# Cannot produce: "\"DELETE_ALL_DATA\"" - not in grammar!
+**Example Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["CLICK", "SCROLL", "TYPE", "WAIT", "NONE", "HOME", "BACK"]
+    },
+    "reasoning": {"type": "string"}
+  },
+  "required": ["action", "reasoning"]
+}
 ```
 
 **Guarantees**:
@@ -215,8 +222,14 @@ action ::= "\"CLICK\"" | "\"SCROLL\"" | "\"TYPE\"" |
 - No arbitrary code execution possible
 
 **Attack Resistance**:
-- Even with compromised model weights, output is constrained
-- Parser cannot be bypassed (integrated into sampling)
+- Model output constrained by schema
+- Gateway validates before transmission
+- Device performs additional validation
+
+**Note on Legacy GBNF**:
+- Local llama.cpp models can still use GBNF grammar constraints
+- Configured on gateway when using local backend
+- Same security properties as before
 
 ### Layer 3: Action Firewall (Heuristic)
 
@@ -428,48 +441,96 @@ if (!hasPermissions(requiredPerms)) {
 
 ## Privacy Guarantees
 
-Sentinel provides strong privacy guarantees:
+Sentinel provides strong privacy guarantees with the API architecture:
 
-### No Network Access
+### User-Controlled Infrastructure
+
+**Gateway Ownership**:
+- You run the OpenClaw Gateway on your own hardware
+- Desktop, NAS, or cloud VM under your control
+- No third-party services involved
+
+**Network Isolation**:
+- Traffic stays on local network (LAN) or VPN
+- No internet access required (unless using cloud model backends)
+- You control both endpoints (device and gateway)
 
 **Manifest**:
 ```xml
-<!-- NO INTERNET PERMISSION -->
-<!-- Network access is impossible -->
+<!-- INTERNET permission required for gateway communication -->
+<uses-permission android:name="android.permission.INTERNET" />
 ```
 
-**Verification**:
-```bash
-adb shell dumpsys package com.mazzlabs.sentinel | grep permission
-# Should NOT show INTERNET
+### Network Security
+
+**TLS Encryption**:
+- WebSocket connections support TLS (wss://)
+- Certificate validation
+- Man-in-the-middle protection
+
+**Host Allowlist**:
+- NetworkFirewall enforces allowed gateway hosts
+- Blocks connections to unauthorized servers
+- Configurable via `gateway_config.json`
+
+**PII Filtering**:
+- NetworkFirewall scans outbound data
+- Blocks common PII patterns (SSN, credit cards, etc.)
+- Configurable redaction rules
+
+**Authentication**:
+- Token-based authentication
+- Tokens stored securely on device
+- Rotation supported
+
+**Example NetworkFirewall**:
+```kotlin
+object NetworkFirewall {
+    private val ALLOWED_HOSTS = setOf(
+        "192.168.1.100",
+        "gateway.local",
+        "10.0.0.5"
+    )
+    
+    private val PII_PATTERNS = listOf(
+        Regex("""\d{3}-\d{2}-\d{4}"""),  // SSN
+        Regex("""\d{13,19}"""),          // Credit card
+        Regex("""\d{3,4}""")             // CVV
+    )
+    
+    fun validateRequest(host: String, data: String): Boolean {
+        if (host !in ALLOWED_HOSTS) return false
+        if (PII_PATTERNS.any { it.containsMatchIn(data) }) return false
+        return true
+    }
+}
 ```
 
 ### No Data Exfiltration
 
-**No Cloud Services**:
-- No analytics (no Google Analytics, Firebase, etc.)
-- No crash reporting (no Sentry, Crashlytics)
+**No Analytics Services**:
+- No Google Analytics, Firebase, etc.
+- No crash reporting to third parties
 - No telemetry
-- No remote configuration
+- No remote configuration from third parties
 
 **No External Storage**:
 - Only uses app-private directories
 - No `WRITE_EXTERNAL_STORAGE` permission
 - Tool files stored in `context.filesDir`
 
-### On-Device Processing Only
+### Gateway Privacy Options
 
-**All inference is local**:
-- llama.cpp runs on-device
-- No API calls to external LLM services
-- Model never leaves device
+**Local Model Backend**:
+- Configure gateway to use local llama.cpp
+- Zero external API calls
+- Complete privacy (all processing on your hardware)
 
-**Verification**:
-```bash
-# Monitor network during inference (should be zero)
-adb shell tcpdump -i any -n | grep sentinel
-# No packets should appear
-```
+**Cloud Model Backend**:
+- Optional: Use Anthropic Claude or OpenAI GPT
+- Data sent to cloud provider (Anthropic/OpenAI)
+- User choice and control
+- Can switch to local model anytime
 
 ### Data Minimization
 
@@ -482,6 +543,11 @@ adb shell tcpdump -i any -n | grep sentinel
 - Captured only when agent is triggered
 - Not logged to external storage
 - Cleared after use
+
+**Network Traffic**:
+- Minimal data sent to gateway
+- Compressed JSON (~1-10KB per query)
+- No unnecessary metadata
 
 ## Action Validation Pipeline
 

@@ -231,9 +231,10 @@ class AgentAccessibilityService : AccessibilityService(),
      * Called from overlay button or voice input
      */
     fun triggerAgent(userQuery: String) {
-        if (!SentinelApplication.getInstance().isModelLoaded) {
-            Log.w(TAG, "Model not loaded, cannot process query")
-            broadcastError("Model not loaded")
+        val inferenceRouter = SentinelApplication.getInstance().inferenceRouter
+        if (inferenceRouter == null) {
+            Log.w(TAG, "Gateway not configured, cannot process query")
+            broadcastError("Gateway not configured. Please configure in settings.")
             return
         }
 

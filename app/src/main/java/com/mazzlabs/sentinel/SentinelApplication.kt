@@ -2,7 +2,6 @@ package com.mazzlabs.sentinel
 
 import android.app.Application
 import android.util.Log
-import com.mazzlabs.sentinel.core.NativeBridge
 import com.mazzlabs.sentinel.gateway.OpenClawGatewayClient
 import com.mazzlabs.sentinel.gateway.GatewayConnectionManager
 import com.mazzlabs.sentinel.gateway.security.GatewayAuthManager
@@ -11,7 +10,8 @@ import com.mazzlabs.sentinel.inference.*
 /**
  * Sentinel Agent Application
  * 
- * Local, Firewall-Protected, Accessibility-Based Android Agent
+ * Lightweight, Gateway-Connected Android Agent
+ * All inference happens via the OpenClaw gateway
  * Designed for high-security environments (GrapheneOS)
  */
 class SentinelApplication : Application() {
@@ -26,8 +26,6 @@ class SentinelApplication : Application() {
             return instance ?: throw IllegalStateException("Application not initialized")
         }
     }
-
-    val nativeBridge: NativeBridge by lazy { NativeBridge() }
 
     val gatewayAuthManager: GatewayAuthManager by lazy { GatewayAuthManager(this) }
 
@@ -69,14 +67,15 @@ class SentinelApplication : Application() {
             return _gatewayConnectionManager
         }
 
-    val inferenceRouter: InferenceRouter
+    val inferenceRouter: InferenceRouter?
         get() {
             if (_inferenceRouter == null) {
-                val local = LocalInferenceProvider(nativeBridge)
-                val remote = gatewayClient?.let { RemoteInferenceProvider(it) }
-                _inferenceRouter = InferenceRouter(local, remote)
+                gatewayClient?.let { client ->
+                    val remote = RemoteInferenceProvider(client)
+                    _inferenceRouter = InferenceRouter(remote)
+                }
             }
-            return _inferenceRouter!!
+            return _inferenceRouter
         }
 
     /**
@@ -95,54 +94,16 @@ class SentinelApplication : Application() {
         Log.i(TAG, "Gateway components reinitialized")
     }
 
-    @Volatile
-    var isModelLoaded: Boolean = false
-        private set
-
     override fun onCreate() {
         super.onCreate()
         instance = this
         Log.i(TAG, "Sentinel Agent Application initialized")
     }
 
-    /**
-     * Initialize the native model engine
-     * Must be called before any inference operations
-     */
-    fun initializeModel(
-        modelPath: String,
-        grammarPath: String,
-        onComplete: (Boolean) -> Unit
-    ) {
-        Thread {
-            try {
-                val result = nativeBridge.initModel(modelPath, grammarPath)
-                isModelLoaded = result
-                Log.i(TAG, "Model initialization: ${if (result) "SUCCESS" else "FAILED"}")
-                onComplete(result)
-            } catch (e: Exception) {
-                Log.e(TAG, "Model initialization error", e)
-                isModelLoaded = false
-                onComplete(false)
-            }
-        }.start()
-    }
-
-    /**
-     * Release native resources
-     */
-    fun releaseModel() {
-        try {
-            nativeBridge.releaseModel()
-            isModelLoaded = false
-            Log.i(TAG, "Model resources released")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing model", e)
-        }
-    }
-
     override fun onTerminate() {
-        releaseModel()
+        // Clean up gateway resources
+        _gatewayClient?.destroy()
+        _gatewayConnectionManager?.destroy()
         super.onTerminate()
     }
 }

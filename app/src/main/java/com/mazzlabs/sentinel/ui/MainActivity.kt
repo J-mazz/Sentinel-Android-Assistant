@@ -14,7 +14,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.mazzlabs.sentinel.R
-import com.mazzlabs.sentinel.core.GrammarManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,22 +21,20 @@ import com.mazzlabs.sentinel.SentinelApplication
 import com.mazzlabs.sentinel.databinding.ActivityMainBinding
 import com.mazzlabs.sentinel.service.AgentAccessibilityService
 import com.mazzlabs.sentinel.ui.settings.SettingsActivity
-import java.io.File
+import com.mazzlabs.sentinel.inference.InferenceOptions
 
 /**
  * MainActivity - Configuration and Status UI
  * 
  * Provides:
  * - Accessibility service enable/disable
- * - Model loading status
+ * - Gateway connection status
  * - Test inference interface
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        // Model path - copy from Downloads: adb shell cp /sdcard/Download/jamba-reasoning-3b-Q4_K_M.gguf /data/local/tmp/
-        private const val DEFAULT_MODEL_PATH = "/data/local/tmp/jamba-reasoning-3b-Q4_K_M.gguf"
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -79,7 +76,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateServiceStatus()
-        updateModelStatus()
+        updateGatewayStatus()
     }
 
     override fun onDestroy() {
@@ -99,11 +96,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Model loading
-        binding.btnLoadModel.setOnClickListener {
-            loadModel()
-        }
-
         // Test inference
         binding.btnTestInference.setOnClickListener {
             testInference()
@@ -114,9 +106,13 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Model path configuration
-        binding.etModelPath.setText(DEFAULT_MODEL_PATH)
-        binding.etGrammarPath.setText(GrammarManager.getGrammarPath("agent.gbnf"))
+        // Gateway configuration button
+        binding.btnLoadModel?.apply {
+            text = "Configure Gateway"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+            }
+        }
     }
 
     private fun registerReceivers() {
@@ -143,34 +139,19 @@ class MainActivity : AppCompatActivity() {
         binding.btnEnableService.text = if (isRunning) "Open Settings" else "Enable Service"
     }
 
-    private fun updateModelStatus() {
-        val isLoaded = SentinelApplication.getInstance().isModelLoaded
-        binding.tvModelStatus.text = if (isLoaded) "LOADED" else "NOT LOADED"
-        binding.tvModelStatus.setTextColor(
-            getColor(if (isLoaded) R.color.status_active else R.color.status_inactive)
-        )
-        binding.btnLoadModel.isEnabled = !isLoaded
-        // Enable test inference when model is loaded (no longer requires accessibility service)
-        binding.btnTestInference.isEnabled = isLoaded
-    }
-
-    private fun loadModel() {
-        val modelPath = binding.etModelPath.text.toString()
-        val grammarPath = resolveGrammarPath(binding.etGrammarPath.text.toString())
-        
-        if (modelPath.isBlank() || grammarPath.isBlank()) {
-            showToast("Please enter model and grammar paths")
-            return
-        }
-
-        binding.btnLoadModel.isEnabled = false
-        binding.tvModelStatus.text = "LOADING..."
-        
-        SentinelApplication.getInstance().initializeModel(modelPath, grammarPath) { success ->
-            runOnUiThread {
-                updateModelStatus()
-                showToast(if (success) "Model loaded successfully" else "Failed to load model")
-            }
+    private fun updateGatewayStatus() {
+        lifecycleScope.launch {
+            val app = SentinelApplication.getInstance()
+            val inferenceRouter = app.inferenceRouter
+            val isConnected = inferenceRouter?.isAvailable() == true
+            
+            binding.tvModelStatus?.text = if (isConnected) "CONNECTED" else "NOT CONNECTED"
+            binding.tvModelStatus?.setTextColor(
+                getColor(if (isConnected) R.color.status_active else R.color.status_inactive)
+            )
+            
+            // Enable test inference when gateway is connected
+            binding.btnTestInference.isEnabled = isConnected
         }
     }
 
@@ -181,82 +162,56 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!SentinelApplication.getInstance().isModelLoaded) {
-            showToast("Model not loaded")
+        val app = SentinelApplication.getInstance()
+        val inferenceRouter = app.inferenceRouter
+
+        if (inferenceRouter == null) {
+            showToast("Gateway not configured. Please configure in settings.")
             return
         }
 
         // Disable button and show loading
         binding.btnTestInference.isEnabled = false
         binding.tvInferenceResult.visibility = View.VISIBLE
-        binding.tvInferenceResult.text = "Running inference..."
+        binding.tvInferenceResult.text = "Running inference via gateway..."
 
         lifecycleScope.launch {
             try {
                 val mockScreenContext = buildMockScreenContext()
-                val nativeBridge = SentinelApplication.getInstance().nativeBridge
-
-                val result = withContext(Dispatchers.IO) {
-                    // Try inference with grammar first
-                    var response = nativeBridge.infer(testQuery, mockScreenContext)
-
-                    // Check if grammar inference failed and retry without grammar
-                    if (shouldRetryWithoutGrammar(response)) {
-                        Log.w(TAG, "Grammar inference failed, retrying without grammar constraint")
-                        response = nativeBridge.inferWithoutGrammar(testQuery, mockScreenContext)
-                        Log.i(TAG, "Fallback inference result: $response")
-                    }
-
-                    response
+                
+                val prompt = buildString {
+                    appendLine("Test inference query:")
+                    appendLine(testQuery)
+                    appendLine()
+                    appendLine("Mock screen context:")
+                    appendLine(mockScreenContext)
                 }
 
-                binding.tvInferenceResult.text = "Result:\n$result"
-                Log.i(TAG, "Test inference result: $result")
+                val result = withContext(Dispatchers.IO) {
+                    inferenceRouter.infer(
+                        prompt = prompt,
+                        options = InferenceOptions(
+                            temperature = 0.7f,
+                            maxTokens = 512
+                        )
+                    )
+                }
+
+                if (result.success) {
+                    binding.tvInferenceResult.text = "✓ Gateway Response:\n${result.text}"
+                    Log.i(TAG, "Test inference result: ${result.text}")
+                } else {
+                    binding.tvInferenceResult.text = "✗ Error: ${result.error}"
+                    Log.e(TAG, "Test inference failed: ${result.error}")
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Test inference failed", e)
-                binding.tvInferenceResult.text = "Error: ${e.message}"
+                binding.tvInferenceResult.text = "✗ Error: ${e.message}"
             } finally {
                 binding.btnTestInference.isEnabled = true
             }
         }
-    }
-
-    private fun resolveGrammarPath(inputPath: String): String {
-        val fallback = GrammarManager.getGrammarPath("agent.gbnf")
-
-        if (inputPath.isBlank()) {
-            Log.w(TAG, "Grammar path blank; using packaged grammar: $fallback")
-            return fallback
-        }
-
-        val file = File(inputPath)
-        if (!file.exists() || !file.canRead()) {
-            Log.w(TAG, "Grammar path not readable: $inputPath; using packaged grammar: $fallback")
-            return fallback
-        }
-
-        val grammarText = runCatching { file.readText() }.getOrNull()
-        if (grammarText.isNullOrBlank() || !grammarText.contains("root ::=")) {
-            Log.w(TAG, "Grammar appears invalid; using packaged grammar: $fallback")
-            return fallback
-        }
-
-        return file.absolutePath
-    }
-
-    /**
-     * Check if inference response indicates grammar failure
-     */
-    private fun shouldRetryWithoutGrammar(response: String): Boolean {
-        val errorIndicators = listOf(
-            "Sampler error",
-            "Grammar",
-            "grammar constraint",
-            "empty grammar stack",
-            "inference error"
-        )
-        return errorIndicators.any { response.contains(it, ignoreCase = true) }
     }
 
     /**

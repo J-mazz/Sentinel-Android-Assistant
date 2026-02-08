@@ -78,7 +78,7 @@
 
                     </LinearLayout>
 
-                    <!-- Model Status Row -->
+                    <!-- Gateway Status Row -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -90,7 +90,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="@string/model_status_label"
+                            android:text="Gateway"
                             android:textColor="@color/text_secondary" />
 
                         <TextView
@@ -98,7 +98,7 @@
                             style="@style/TextAppearance.Sentinel.Status"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/status_not_loaded"
+                            android:text="NOT CONNECTED"
                             android:textColor="@color/status_inactive" />
 
                     </LinearLayout>
@@ -110,70 +110,21 @@
                         android:layout_height="wrap_content"
                         android:text="@string/btn_enable_service" />
 
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Model Configuration Card -->
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Sentinel.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Model Configuration"
-                        android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="@color/text_primary"
-                        android:layout_marginBottom="16dp" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Sentinel.TextInputLayout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        android:hint="@string/hint_model_path">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etModelPath"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="text"
-                            android:fontFamily="monospace"
-                            android:textSize="12sp" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Sentinel.TextInputLayout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
-                        android:hint="@string/hint_grammar_path">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etGrammarPath"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="text"
-                            android:fontFamily="monospace"
-                            android:textSize="12sp" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnLoadModel"
-                        style="@style/Widget.Sentinel.Button"
+                        style="@style/Widget.Sentinel.Button.Outlined"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/btn_load_model" />
+                        android:layout_marginTop="8dp"
+                        android:text="Configure Gateway" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSettings"
+                        style="@style/Widget.Sentinel.Button.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Settings" />
 
                 </LinearLayout>
 
@@ -193,7 +144,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Test Inference"
+                        android:text="Test Gateway"
                         android:textAppearance="?attr/textAppearanceTitleMedium"
                         android:textColor="@color/text_primary"
                         android:layout_marginBottom="16dp" />
@@ -220,7 +171,7 @@
                         style="@style/Widget.Sentinel.Button"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/btn_test_inference"
+                        android:text="Test Inference"
                         android:enabled="false" />
 
                     <!-- Inference Result Display -->
