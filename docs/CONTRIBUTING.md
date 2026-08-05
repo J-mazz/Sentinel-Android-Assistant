@@ -28,7 +28,7 @@ Thank you for your interest in contributing to Sentinel! This document provides 
 **Template**:
 ```markdown
 **Device**: Google Pixel 7, Android 14
-**Model**: Jamba-3B Q4_K_M
+**Model backend**: gemma-local/gemma-4-e2b-it
 **Commit**: ea04fde
 
 **Steps to Reproduce**:
@@ -70,7 +70,6 @@ See [Setup Guide](SETUP.md) for complete setup instructions.
 ```bash
 git clone https://github.com/your-org/Sentinel-Android-Assistant.git
 cd Sentinel-Android-Assistant
-./scripts/setup_llama.sh
 ./gradlew assembleDebug
 ```
 
@@ -254,29 +253,6 @@ suspend fun process(
 - Use sealed classes for result types
 - Leverage coroutines for async
 
-### C++
-
-**Follow C++23 Modern Style**:
-- Use `std::` types over C types
-- RAII for resource management
-- `const` correctness
-- `[[nodiscard]]` for important returns
-
-**Example**:
-```cpp
-/**
- * Runs inference with grammar constraint.
- *
- * @param prompt The input prompt
- * @param grammar_path Path to GBNF grammar file
- * @return Expected<string, string> containing result or error
- */
-[[nodiscard]] std::expected<std::string, std::string>
-run_inference(const std::string& prompt, const std::string& grammar_path) {
-    // Implementation
-}
-```
-
 ### Testing
 
 **Test Guidelines**:
@@ -306,14 +282,14 @@ fun `processQuery returns ToolResult for calendar query`() = runTest {
 **All contributions must consider security**:
 
 1. **Input Validation**: Sanitize all inputs
-2. **No Network Calls**: Maintain privacy guarantee
+2. **Restricted Network Calls**: Route inference only to the configured gateway
 3. **Permission Checks**: Verify before accessing sensitive data
 4. **Resource Cleanup**: No memory/file descriptor leaks
 5. **Error Messages**: Don't leak sensitive info in logs
 6. **Testing**: Include security-focused tests
 
 **Security Checklist**:
-- [ ] No network permissions added
+- [ ] No new network destinations added without policy updates
 - [ ] No sensitive data in logs
 - [ ] Input validation present
 - [ ] Resource cleanup confirmed

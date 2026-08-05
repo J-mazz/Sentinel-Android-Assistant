@@ -106,12 +106,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Gateway configuration button
-        binding.btnLoadModel?.apply {
-            text = "Configure Gateway"
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
-            }
+        binding.btnConfigureGateway.setOnClickListener {
+            startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
         }
     }
 
@@ -145,8 +141,10 @@ class MainActivity : AppCompatActivity() {
             val inferenceRouter = app.inferenceRouter
             val isConnected = inferenceRouter?.isAvailable() == true
             
-            binding.tvModelStatus?.text = if (isConnected) "CONNECTED" else "NOT CONNECTED"
-            binding.tvModelStatus?.setTextColor(
+            binding.tvGatewayStatus.text = getString(
+                if (isConnected) R.string.status_connected else R.string.status_not_connected
+            )
+            binding.tvGatewayStatus.setTextColor(
                 getColor(if (isConnected) R.color.status_active else R.color.status_inactive)
             )
             

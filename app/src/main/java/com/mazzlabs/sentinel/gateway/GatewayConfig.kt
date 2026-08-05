@@ -13,9 +13,10 @@ object GatewayConfig {
      * NOTE: These should be synced with the actual OpenClaw gateway config
      */
     object Models {
-        const val ARCHITECT = "anthropic/claude-opus-4-5"
-        const val ENGINEER = "openai-codex/gpt-5.2-codex"
-        const val FIXER = "openai/gpt-5.2-pro"
+        const val LOCAL_DEFAULT = "gemma-local/gemma-4-e2b-it"
+        const val ARCHITECT = LOCAL_DEFAULT
+        const val ENGINEER = LOCAL_DEFAULT
+        const val FIXER = LOCAL_DEFAULT
     }
 
     /** Session keys for each agent role */

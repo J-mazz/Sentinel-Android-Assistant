@@ -55,7 +55,7 @@ Sentinel implements a strict three-boundary design inspired by security-critical
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │            Remote Inference Server                      │  │
 │  │  • Runs on LAN/VPN (user-controlled)                    │  │
-│  │  • Model selection (Claude, GPT, local llama, etc.)     │  │
+│  │  • Gemma 4 by default; other providers are configurable │  │
 │  │  • Context wrapping (chat template)                     │  │
 │  │  • Structured output generation (JSON)                  │  │
 │  │  • Server-side validation                               │  │
@@ -105,7 +105,7 @@ Sentinel implements a strict three-boundary design inspired by security-critical
 
 **Components**:
 - OpenClaw Gateway server (runs on LAN/VPN)
-- Configurable model backend (Claude, GPT, local llama.cpp, etc.)
+- Gemma 4 through local llama.cpp by default, with configurable alternatives
 - WebSocket API for real-time communication
 - Structured output generation
 - Server-side prompt engineering
@@ -414,7 +414,7 @@ Beyond the three-layer security architecture, the codebase is organized into fun
 │  4. Format prompt for configured model                          │
 │     → Uses model's chat template                                │
 │     → Formats: system/user/assistant structure                  │
-│  5. Invoke model (Claude, GPT, local llama.cpp, etc.)           │
+│  5. Invoke Gemma 4 through local llama.cpp                      │
 │     → Structured output (JSON) enforced by model                │
 │  6. Validate JSON structure                                     │
 │  7. Return response via WebSocket                               │
@@ -754,7 +754,8 @@ Implement `ToolModule` interface and register in `ToolRegistry`
 Implement `AgentNode` interface and add to graph definition
 
 ### Gateway Backend Selection
-Configure OpenClaw to use different models (Claude, GPT, local llama.cpp)
+Sentinel defaults to `gemma-local/gemma-4-e2b-it`. Configure OpenClaw and
+`GatewayConfig.Models` together when selecting a different model.
 
 ### Custom Actions
 Add to `ActionType` enum and implement in `ActionDispatcher`

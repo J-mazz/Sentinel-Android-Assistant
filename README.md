@@ -1,6 +1,6 @@
 # Sentinel Agent Android
 
-A Lightweight, Gateway-Connected Android Agent designed for high-security environments (GrapheneOS). All reasoning happens via the OpenClaw gateway, while the Android app focuses on observation and action execution.
+A lightweight, gateway-connected Android agent designed for high-security environments such as GrapheneOS. The default backend is `gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf`, served by llama.cpp through an OpenClaw gateway. The Android app focuses on observation and validated action execution.
 
 ## Architecture
 
@@ -59,14 +59,14 @@ app/
 ### Infrastructure
 - **OpenClaw Gateway**: You need a running OpenClaw gateway instance
   - Can be self-hosted (local network or VPS)
-  - Provides access to cloud models (Anthropic, OpenAI, etc.)
-  - OR local models via Ollama/llama.cpp integration
+  - Defaults to the local Gemma 4 GGUF through llama.cpp
+  - Can be reconfigured for another OpenClaw model provider
   - See [OpenClaw documentation](https://github.com/openclaw/openclaw) for setup
 
 ## Setup
 
-### 1. Set up OpenClaw Gateway
-Follow the OpenClaw gateway installation guide to set up your inference backend.
+### 1. Set up the Gemma backend and OpenClaw Gateway
+Keep `gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf` in the project root, install a current llama.cpp build, then follow the [Quick Start](docs/QUICKSTART.md). The model file is intentionally excluded from Git.
 
 ### 2. Build & Deploy Sentinel
 ```bash
@@ -119,18 +119,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Why Gateway-Based?
 
-The previous version ran a 3GB model on-device, which caused:
-- Memory pressure and Low Memory Killer (LMK) kills
-- GrapheneOS timeout issues
-- Limited model capabilities (small quantized models only)
-- Complex NDK/C++ build chain
-
-The gateway-based approach provides:
-- Access to powerful cloud models (Claude, GPT-4, etc.)
-- OR local models via Ollama without device memory constraints
-- Simpler Android build (pure Kotlin, no NDK)
-- Better reliability (no OOM kills)
-- Still private (your infrastructure, your models)
+Gemma runs on gateway hardware instead of inside the Android process. This keeps the app pure Kotlin, avoids shipping a multi-gigabyte model in the APK, reduces device memory pressure, and preserves a user-controlled inference boundary.
 
 ## Development
 
@@ -151,4 +140,5 @@ MIT License - See LICENSE file
 ## Acknowledgments
 
 - [OpenClaw](https://github.com/openclaw/openclaw) - Gateway and inference platform
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) - Local GGUF inference server
 - [GrapheneOS](https://grapheneos.org/) - Security-focused Android

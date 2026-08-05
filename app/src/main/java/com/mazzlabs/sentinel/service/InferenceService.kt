@@ -17,8 +17,8 @@ import kotlinx.coroutines.*
 /**
  * InferenceService - Foreground service for model inference
  * 
- * Runs in the foreground to ensure the model stays loaded and
- * responsive even when the app is in the background.
+ * Runs in the foreground to keep the configured gateway connection
+ * responsive while the app is in the background.
  */
 class InferenceService : Service() {
 

@@ -90,15 +90,15 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Gateway"
+                            android:text="@string/gateway_status_label"
                             android:textColor="@color/text_secondary" />
 
                         <TextView
-                            android:id="@+id/tvModelStatus"
+                            android:id="@+id/tvGatewayStatus"
                             style="@style/TextAppearance.Sentinel.Status"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="NOT CONNECTED"
+                            android:text="@string/status_not_connected"
                             android:textColor="@color/status_inactive" />
 
                     </LinearLayout>
@@ -111,12 +111,12 @@
                         android:text="@string/btn_enable_service" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnLoadModel"
+                        android:id="@+id/btnConfigureGateway"
                         style="@style/Widget.Sentinel.Button.Outlined"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="Configure Gateway" />
+                        android:text="@string/btn_configure_gateway" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSettings"

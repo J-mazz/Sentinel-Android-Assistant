@@ -5,26 +5,23 @@
     <!-- Accessibility Service -->
     <string name="accessibility_service_label">Sentinel Agent</string>
     <string name="accessibility_service_summary">AI-powered accessibility assistant</string>
-    <string name="accessibility_service_description">Sentinel Agent uses on-device AI to help you interact with your device through voice commands and screen analysis. All processing happens locally on your device - no data is sent to external servers.</string>
+    <string name="accessibility_service_description">Sentinel Agent sends requested screen context to your configured OpenClaw gateway, then validates and executes approved actions on this device.</string>
     
     <!-- Main Activity -->
     <string name="service_status_label">Service Status</string>
-    <string name="model_status_label">Model Status</string>
+    <string name="gateway_status_label">Gateway</string>
     <string name="status_active">ACTIVE</string>
     <string name="status_inactive">INACTIVE</string>
-    <string name="status_loaded">LOADED</string>
-    <string name="status_not_loaded">NOT LOADED</string>
-    <string name="status_loading">LOADING…</string>
+    <string name="status_connected">CONNECTED</string>
+    <string name="status_not_connected">NOT CONNECTED</string>
     
     <!-- Buttons -->
     <string name="btn_enable_service">Enable Service</string>
     <string name="btn_open_settings">Open Settings</string>
-    <string name="btn_load_model">Load Model</string>
+    <string name="btn_configure_gateway">Configure Gateway</string>
     <string name="btn_test_inference">Test Inference</string>
     
     <!-- Input Fields -->
-    <string name="hint_model_path">Model path (.gguf)</string>
-    <string name="hint_grammar_path">Grammar path (.gbnf)</string>
     <string name="hint_test_query">Enter test query…</string>
     
     <!-- Notifications -->
@@ -39,14 +36,11 @@
     <string name="dialog_cancel">Cancel</string>
     
     <!-- Errors -->
-    <string name="error_model_not_loaded">Model not loaded</string>
     <string name="error_service_not_running">Accessibility service not running</string>
     <string name="error_inference_failed">Inference failed</string>
     
     <!-- Toast Messages -->
     <string name="toast_service_connected">Agent service connected</string>
-    <string name="toast_model_loaded">Model loaded successfully</string>
-    <string name="toast_model_failed">Failed to load model</string>
     <string name="toast_action_success">%1$s: Success</string>
     <string name="toast_action_failed">%1$s: Failed</string>
 </resources>

@@ -706,7 +706,7 @@ adb logcat -s ToolExecutor CalendarModule
 2. **Use Parameterized Queries**: Prevent SQL injection
 3. **Check Permissions**: Always verify before accessing sensitive data
 4. **Limit Results**: Cap query sizes (e.g., max 100 events)
-5. **No Network Access**: Maintain privacy guarantee
+5. **Restricted Network Access**: Route inference only through the configured gateway
 6. **Sanitize Outputs**: Remove sensitive data from logs
 
 ### Performance
